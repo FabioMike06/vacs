@@ -2,6 +2,7 @@ import {useEffect, useState} from "preact/hooks";
 import StatusIndicator from "./ui/StatusIndicator.tsx";
 
 type TimeState = {
+    seconds: string;
     hours: string;
     minutes: string;
     day: string;
@@ -9,6 +10,7 @@ type TimeState = {
 
 function Clock() {
     const [time, setTime] = useState<TimeState>({
+        seconds: "99",
         hours: "99",
         minutes: "99",
         day: "99",
@@ -20,12 +22,13 @@ function Clock() {
             const hours = now.getUTCHours().toString().padStart(2, "0");
             const minutes = now.getUTCMinutes().toString().padStart(2, "0");
             const day = now.getUTCDate().toString().padStart(2, "0");
+            const seconds = now.getUTCSeconds().toString().padStart(2, "0");
 
             setTime(prev => {
-                if (prev.hours === hours && prev.minutes === minutes && prev.day === day) {
+                if (prev.hours === hours && prev.minutes === minutes && prev.day === day && prev.seconds == seconds) {
                     return prev;
                 }
-                return {hours, minutes, day};
+                return {hours, minutes, day, seconds};
             });
         };
 
@@ -47,7 +50,7 @@ function Clock() {
                     <StatusIndicator />
                 </div>
                 <p className="font-bold leading-3 tracking-wider text-xl text-gray-500">
-                    {time.day}
+                    {time.seconds}
                 </p>
             </div>
         </div>
