@@ -1,4 +1,4 @@
-use crate::profile::DirectAccessPage;
+use crate::profile::{CustomButtonColor, DirectAccessPage};
 use crate::vatsim::StationId;
 use serde::{Deserialize, Serialize};
 
@@ -123,6 +123,10 @@ pub struct GeoPageButton {
 
     /// The size of the button (> 0, in rem).
     pub size: f64,
+
+    /// The background color of the button, which may be overridden dynamically by state changes (e.g., incoming call). Defaults to gray if unspecified.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<CustomButtonColor>,
 
     /// The optional direct access page that opens when this button is clicked.
     ///

@@ -10,8 +10,8 @@ use vacs_protocol::profile::geo::{
 };
 use vacs_protocol::profile::tabbed::Tab;
 use vacs_protocol::profile::{
-    DirectAccessKey, DirectAccessPage, DirectAccessPageContent, Profile as ProtocolProfile,
-    ProfileId, ProfileType,
+    CustomButtonColor, DirectAccessKey, DirectAccessPage, DirectAccessPageContent,
+    Profile as ProtocolProfile, ProfileId, ProfileType,
 };
 use vacs_protocol::vatsim::StationId;
 
@@ -85,6 +85,8 @@ pub(super) struct GeoPageButtonRaw {
     #[serde(deserialize_with = "vacs_protocol::profile::string_or_vec")]
     pub label: Vec<String>,
     pub size: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<CustomButtonColor>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub page: Option<DirectAccessPageRaw>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -117,6 +119,8 @@ pub(super) enum DirectAccessPageContentRaw {
 pub(super) struct DirectAccessKeyRaw {
     #[serde(deserialize_with = "vacs_protocol::profile::string_or_vec")]
     pub label: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<CustomButtonColor>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub station_id: Option<StationId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -462,6 +466,7 @@ impl FromRaw<GeoPageButtonRaw> for GeoPageButton {
         Ok(Self {
             label: raw.label,
             size: raw.size,
+            color: raw.color,
             page: raw.page.map(DirectAccessPage::from_raw).transpose()?,
             station_id: raw.station_id,
         })
@@ -511,6 +516,7 @@ impl TryFrom<DirectAccessKeyRaw> for DirectAccessKey {
         raw.validate()?;
         Ok(Self {
             label: raw.label,
+            color: raw.color,
             station_id: raw.station_id,
             page: raw.page.map(DirectAccessPage::from_raw).transpose()?,
         })
@@ -900,6 +906,7 @@ mod tests {
                 direction: FlexDirection::Row,
                 children: vec![GeoNodeRaw::Button(GeoPageButtonRaw {
                     label: vec!["L".to_string()],
+                    color: None,
                     size: 1.0,
                     page: None,
                     station_id: None,
@@ -983,6 +990,7 @@ mod tests {
     fn geo_page_button_validation() {
         let valid = GeoPageButtonRaw {
             label: vec!["L".to_string()],
+            color: None,
             size: 10.0f64,
             page: Some(DirectAccessPageRaw {
                 rows: 1,
@@ -994,6 +1002,7 @@ mod tests {
 
         let empty_label = GeoPageButtonRaw {
             label: vec![],
+            color: None,
             size: 10.0f64,
             page: Some(DirectAccessPageRaw {
                 rows: 1,
@@ -1013,6 +1022,7 @@ mod tests {
                 "3".to_string(),
                 "4".to_string(),
             ],
+            color: None,
             size: 10.0f64,
             page: Some(DirectAccessPageRaw {
                 rows: 1,
@@ -1027,6 +1037,7 @@ mod tests {
 
         let negative_size = GeoPageButtonRaw {
             label: vec!["L".to_string()],
+            color: None,
             size: -10.0f64,
             page: Some(DirectAccessPageRaw {
                 rows: 1,
@@ -1041,6 +1052,7 @@ mod tests {
 
         let mutually_exclusive = GeoPageButtonRaw {
             label: vec!["L".to_string()],
+            color: None,
             size: 10.0f64,
             page: Some(DirectAccessPageRaw {
                 rows: 1,
@@ -1056,6 +1068,7 @@ mod tests {
 
         let station_id_only = GeoPageButtonRaw {
             label: vec!["L".to_string()],
+            color: None,
             size: 10.0f64,
             page: None,
             station_id: Some(StationId::from("S1")),
@@ -1085,6 +1098,7 @@ mod tests {
     fn direct_access_key_validation() {
         let valid = DirectAccessKeyRaw {
             label: vec!["L".to_string()],
+            color: None,
             station_id: Some(StationId::from("S1")),
             page: None,
         };
@@ -1092,6 +1106,7 @@ mod tests {
 
         let valid = DirectAccessKeyRaw {
             label: vec!["L".to_string()],
+            color: None,
             station_id: None,
             page: Some(DirectAccessPageRaw {
                 rows: 1,
@@ -1102,6 +1117,7 @@ mod tests {
 
         let valid = DirectAccessKeyRaw {
             label: vec!["L".to_string()],
+            color: None,
             station_id: None,
             page: Some(DirectAccessPageRaw {
                 rows: 1,
@@ -1114,6 +1130,7 @@ mod tests {
 
         let invalid_fields = DirectAccessKeyRaw {
             label: vec!["L".to_string()],
+            color: None,
             station_id: Some(StationId::from("S1")),
             page: Some(DirectAccessPageRaw {
                 rows: 1,
@@ -1146,12 +1163,14 @@ mod tests {
                 children: vec![
                     GeoNodeRaw::Button(GeoPageButtonRaw {
                         label: vec!["B1".to_string()],
+                        color: None,
                         size: 10.0,
                         page: Some(DirectAccessPageRaw {
                             rows: 1,
                             content: DirectAccessPageContentRaw::Keys {
                                 keys: vec![DirectAccessKeyRaw {
                                     label: vec!["K1".to_string()],
+                                    color: None,
                                     station_id: Some(StationId::from("S1")),
                                     page: None,
                                 }],
@@ -1161,6 +1180,7 @@ mod tests {
                     }),
                     GeoNodeRaw::Button(GeoPageButtonRaw {
                         label: vec!["B2".to_string()],
+                        color: None,
                         size: 10.0,
                         page: Some(DirectAccessPageRaw {
                             rows: 1,
@@ -1168,16 +1188,19 @@ mod tests {
                                 keys: vec![
                                     DirectAccessKeyRaw {
                                         label: vec!["K2".to_string()],
+                                        color: None,
                                         station_id: Some(StationId::from("S2")),
                                         page: None,
                                     },
                                     DirectAccessKeyRaw {
                                         label: vec!["K3".to_string()],
+                                        color: None,
                                         station_id: Some(StationId::from("S1")), // Duplicate
                                         page: None,
                                     },
                                     DirectAccessKeyRaw {
                                         label: vec!["K4".to_string()],
+                                        color: None,
                                         station_id: None,
                                         page: None,
                                     },
@@ -1217,12 +1240,14 @@ mod tests {
                 direction: FlexDirection::Row,
                 children: vec![GeoNodeRaw::Button(GeoPageButtonRaw {
                     label: vec!["L".to_string()],
+                    color: None,
                     size: 10.0,
                     page: Some(DirectAccessPageRaw {
                         rows: 1,
                         content: DirectAccessPageContentRaw::Keys {
                             keys: vec![DirectAccessKeyRaw {
                                 label: vec!["K1".to_string()],
+                                color: None,
                                 station_id: Some(station_id.clone()),
                                 page: None,
                             }],
@@ -1251,12 +1276,14 @@ mod tests {
                 direction: FlexDirection::Row,
                 children: vec![GeoNodeRaw::Button(GeoPageButtonRaw {
                     label: vec!["L".to_string()],
+                    color: None,
                     size: 10.0,
                     page: Some(DirectAccessPageRaw {
                         rows: 1,
                         content: DirectAccessPageContentRaw::Keys {
                             keys: vec![DirectAccessKeyRaw {
                                 label: vec!["K3".to_string()],
+                                color: None,
                                 station_id: Some(StationId::from("MISSING")),
                                 page: None,
                             }],
@@ -1289,12 +1316,14 @@ mod tests {
                 direction: FlexDirection::Row,
                 children: vec![GeoNodeRaw::Button(GeoPageButtonRaw {
                     label: vec!["L".to_string()],
+                    color: None,
                     size: 10.0,
                     page: Some(DirectAccessPageRaw {
                         rows: 1,
                         content: DirectAccessPageContentRaw::Keys {
                             keys: vec![DirectAccessKeyRaw {
                                 label: vec!["K4".to_string()],
+                                color: None,
                                 station_id: None,
                                 page: None,
                             }],

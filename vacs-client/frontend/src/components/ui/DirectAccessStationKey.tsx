@@ -10,10 +10,13 @@ type DirectAccessStationKeyProps = {
 };
 
 function DirectAccessStationKey({
-    data: {stationId, label},
+    data: {stationId, label, color: defaultColor},
     className,
 }: DirectAccessStationKeyProps) {
-    const {color, highlight, disabled, own, handleClick} = useStationKeyInteraction(stationId);
+    const {color, highlight, disabled, own, handleClick} = useStationKeyInteraction(
+        stationId,
+        defaultColor,
+    );
 
     return (
         <Button

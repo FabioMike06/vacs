@@ -1,4 +1,5 @@
 import {ButtonColor, ButtonHighlightColor} from "../components/ui/Button.tsx";
+import {CustomButtonColor} from "../types/custom-button-colors.ts";
 
 export type CallStateColorParams = {
     inCall: boolean;
@@ -12,6 +13,7 @@ export type CallStateColorParams = {
     blink: boolean;
     temporarySource?: boolean;
     defaultSource?: boolean;
+    defaultColor?: CustomButtonColor;
 };
 
 export type CallStateColors = {
@@ -31,7 +33,10 @@ export function getCallStateColors({
     blink,
     temporarySource = false,
     defaultSource = false,
+    defaultColor = undefined,
 }: CallStateColorParams): CallStateColors {
+    const backgroundColor: ButtonHighlightColor = defaultColor ?? "gray";
+
     let color: ButtonColor;
 
     if (inCall) {
@@ -40,10 +45,10 @@ export function getCallStateColors({
         if (blink) {
             color = incomingPrio ? "yellow" : "green";
         } else {
-            color = "gray";
+            color = backgroundColor;
         }
     } else if (beingCalled && outgoingPrio) {
-        color = blink ? "yellow" : "gray";
+        color = blink ? "yellow" : backgroundColor;
     } else if (isRejected && blink) {
         color = "green";
     } else if (isError && blink) {
@@ -55,13 +60,13 @@ export function getCallStateColors({
     } else if (defaultSource) {
         color = "honey";
     } else {
-        color = "gray";
+        color = backgroundColor;
     }
 
     let highlight: ButtonHighlightColor | undefined;
 
     if (isCalling && incomingPrio) {
-        highlight = blink ? "green" : "gray";
+        highlight = blink ? "green" : backgroundColor;
     } else if (beingCalled || isRejected || (inCall && outgoingPrio)) {
         highlight = "green";
     } else {
