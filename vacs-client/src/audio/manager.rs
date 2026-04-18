@@ -1,11 +1,13 @@
 use crate::app::state::AppState;
 use crate::app::state::signaling::AppStateSignalingExt;
 use crate::app::state::webrtc::AppStateWebrtcExt;
+use crate::audio::wav_source::WavLoopSource;
 use crate::config::AudioConfig;
 use crate::error::{Error, FrontendError};
 use parking_lot::RwLock;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
@@ -27,6 +29,7 @@ const AUDIO_STREAM_ERROR_CHANNEL_SIZE: usize = 32;
 pub enum SourceType {
     Opus,
     Ring,
+    RingOneshot,
     PriorityRing,
     Ringback,
     RingbackOneshot,
@@ -47,6 +50,15 @@ impl SourceType {
                 unimplemented!("Cannot create waveform source for Opus SourceType")
             }
             SourceType::Ring => WaveformSource::single(
+                WaveformTone::new(497.0, Waveform::Triangle, 0.2),
+                Duration::from_secs_f32(1.69),
+                None,
+                Duration::from_millis(10),
+                sample_rate,
+                output_channels,
+                volume,
+            ),
+            SourceType::RingOneshot => WaveformSource::single(
                 WaveformTone::new(497.0, Waveform::Triangle, 0.2),
                 Duration::from_secs_f32(1.69),
                 None,
@@ -140,6 +152,62 @@ impl SourceType {
             ),
         }
     }
+}
+
+fn ringtone_path(app: &AppHandle, file_name: &str) -> Option<PathBuf> {
+    let config_dir = app.path().app_config_dir().ok()?;
+    Some(config_dir.join(file_name))
+}
+
+fn add_ring_source(
+    output: &PlaybackStream,
+    app: &AppHandle,
+    source_type: SourceType,
+    sample_rate: f32,
+    channels: usize,
+    volume: f32,
+) -> AudioSourceId {
+    let (file_name, looping) = match source_type {
+        SourceType::Ring => ("ring.wav", true),
+        SourceType::RingOneshot => ("ring.wav", false),
+        SourceType::PriorityRing => ("priority-ring.wav", true),
+        _ => return output.add_audio_source(Box::new(SourceType::into_waveform_source(source_type, sample_rate, channels, volume))),
+    };
+
+    if let Some(path) = ringtone_path(app, file_name)
+        && path.exists()
+    {
+        let source = if looping {
+            WavLoopSource::from_file_looping(&path, sample_rate, channels, volume)
+        } else {
+            WavLoopSource::from_file_oneshot(&path, sample_rate, channels, volume)
+        };
+
+        match source {
+            Ok(source) => {
+                log::info!(
+                    "Using custom ringtone file for {:?}: {}",
+                    source_type,
+                    path.display()
+                );
+                return output.add_audio_source(Box::new(source));
+            }
+            Err(err) => {
+                log::warn!(
+                    "Failed to load custom ringtone file {} for {:?}: {err:?}. Falling back to built-in tone",
+                    path.display(),
+                    source_type,
+                );
+            }
+        }
+    }
+
+    output.add_audio_source(Box::new(SourceType::into_waveform_source(
+        source_type,
+        sample_rate,
+        channels,
+        volume,
+    )))
 }
 
 pub struct AudioManager {
@@ -423,7 +491,7 @@ impl AudioManager {
             self.output.set_volume(*source_id, volume);
 
             match source_type {
-                SourceType::Ring | SourceType::Click | SourceType::RingbackOneshot => {
+                SourceType::Click | SourceType::RingbackOneshot => {
                     self.output.restart_audio_source(*source_id);
                 }
                 _ => {}
@@ -436,7 +504,7 @@ impl AudioManager {
             speaker.set_volume(*source_id, volume);
 
             match source_type {
-                SourceType::Ring | SourceType::Click | SourceType::RingbackOneshot => {
+                SourceType::Click | SourceType::RingbackOneshot => {
                     speaker.restart_audio_source(*source_id);
                 }
                 _ => {}
@@ -519,9 +587,10 @@ impl AudioManager {
         let output = PlaybackStream::start(device, error_tx)?;
 
         let audio_config_clone = audio_config.clone();
+        let app_error = app.clone();
         tauri::async_runtime::spawn(async move {
             while let Some(err) = error_rx.recv().await {
-                let state = app.state::<AppState>();
+                let state = app_error.state::<AppState>();
                 let mut state = state.lock().await;
 
                 if restarting {
@@ -529,7 +598,7 @@ impl AudioManager {
                         "Restarting output device after failure errored, cannot recover: {:?}",
                         err
                     );
-                    app.emit::<FrontendError>("error", Error::AudioDevice(Box::from(AudioError::Other(
+                    app_error.emit::<FrontendError>("error", Error::AudioDevice(Box::from(AudioError::Other(
                         anyhow::anyhow!("Audio output device failed to start irrecoverably, check your audio settings and restart the application.")
                     ))).into()).ok();
                 } else {
@@ -548,26 +617,26 @@ impl AudioManager {
                             log::warn!("Failed to send call end signaling message: {:?}", err);
                         };
                         state.set_outgoing_call(None);
-                        app.state::<AudioManagerHandle>()
+                        app_error.state::<AudioManagerHandle>()
                             .read()
                             .stop(SourceType::Ringback);
 
-                        app.emit("signaling:call-end", &call_id).ok();
+                        app_error.emit("signaling:call-end", &call_id).ok();
                     }
 
                     let res = {
-                        let audio_manager = app.state::<AudioManagerHandle>();
+                        let audio_manager = app_error.state::<AudioManagerHandle>();
                         let mut audio_manager = audio_manager.write();
 
                         if speaker {
                             audio_manager.switch_output_device(
-                                app.clone(),
+                                app_error.clone(),
                                 &audio_config_clone,
                                 true,
                             )
                         } else {
                             audio_manager.switch_speaker_device(
-                                app.clone(),
+                                app_error.clone(),
                                 &audio_config_clone,
                                 true,
                             )
@@ -578,7 +647,7 @@ impl AudioManager {
                     if let Err(err) = res {
                         log::error!("Failed to switch {device} device after failure: {:?}", err);
 
-                        app.emit::<FrontendError>("error", Error::AudioDevice(Box::from(AudioError::Other(
+                        app_error.emit::<FrontendError>("error", Error::AudioDevice(Box::from(AudioError::Other(
                             anyhow::anyhow!("Audio {device} device failed to start irrecoverably, check your audio settings and restart the application.")
                         ))).into()).ok();
 
@@ -589,7 +658,7 @@ impl AudioManager {
                         );
                     }
 
-                    app.emit::<FrontendError>(
+                    app_error.emit::<FrontendError>(
                         "error",
                         FrontendError::from(Error::from(err)).non_critical(),
                     )
@@ -603,21 +672,36 @@ impl AudioManager {
 
         source_ids.insert(
             SourceType::Ring,
-            output.add_audio_source(Box::new(SourceType::into_waveform_source(
+            add_ring_source(
+                &output,
+                &app,
                 SourceType::Ring,
                 sample_rate,
                 channels,
                 audio_config.chime_volume,
-            ))),
+            ),
         );
         source_ids.insert(
             SourceType::PriorityRing,
-            output.add_audio_source(Box::new(SourceType::into_waveform_source(
+            add_ring_source(
+                &output,
+                &app,
                 SourceType::PriorityRing,
                 sample_rate,
                 channels,
                 audio_config.chime_volume,
-            ))),
+            ),
+        );
+        source_ids.insert(
+            SourceType::RingOneshot,
+            add_ring_source(
+                &output,
+                &app,
+                SourceType::RingOneshot,
+                sample_rate,
+                channels,
+                audio_config.chime_volume,
+            ),
         );
         source_ids.insert(
             SourceType::Click,

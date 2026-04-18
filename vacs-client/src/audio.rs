@@ -3,6 +3,7 @@ use vacs_audio::device::DeviceType;
 
 pub(crate) mod commands;
 pub(crate) mod manager;
+pub(crate) mod wav_source;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]

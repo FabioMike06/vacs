@@ -1,4 +1,5 @@
 use crate::app::state::AppState;
+use crate::app::state::signaling::AppStateSignalingExt;
 use crate::app::state::webrtc::AppStateWebrtcExt;
 use crate::audio::manager::{AudioManagerHandle, SourceType};
 use crate::audio::{AudioDevices, AudioHosts, AudioVolumes, ClientAudioDeviceType, VolumeType};
@@ -256,7 +257,16 @@ pub async fn audio_set_volume(
         VolumeType::Chime => {
             audio_manager.set_output_volume(SourceType::Ring, volume);
             audio_manager.set_output_volume(SourceType::PriorityRing, volume);
+            audio_manager.set_output_volume(SourceType::RingOneshot, volume);
             state.config.audio.chime_volume = volume;
+
+            let should_preview = state.active_call_id().is_none()
+                && state.outgoing_call_id().is_none()
+                && state.incoming_calls_len() == 0;
+
+            if should_preview {
+                audio_manager.restart(SourceType::RingOneshot);
+            }
         }
     }
 
