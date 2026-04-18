@@ -3,6 +3,7 @@ use vacs_audio::device::DeviceType;
 
 pub(crate) mod commands;
 pub(crate) mod manager;
+pub(crate) mod wav_source;
 pub(crate) mod source_type;
 
 #[derive(Serialize)]

@@ -3,11 +3,13 @@ use crate::app::state::signaling::AppStateSignalingExt;
 use crate::app::state::webrtc::AppStateWebrtcExt;
 use crate::audio::PlaybackDeviceType;
 use crate::audio::source_type::SourceType;
+use crate::audio::wav_source::WavLoopSource;
 use crate::config::AudioConfig;
 use crate::error::{Error, FrontendError};
 use parking_lot::RwLock;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
@@ -25,6 +27,67 @@ use vacs_signaling::protocol::ws::shared::CallErrorReason;
 const AUDIO_STREAM_ERROR_CHANNEL_SIZE: usize = 32;
 
 type SourceMap = HashMap<SourceType, AudioSourceId>;
+
+/// File names used for custom ringtone overrides, keyed by SourceType.
+/// Only Ring and PriorityRing support custom WAV files; everything else
+/// falls back to the built-in waveform tone.
+fn custom_ringtone_file_name(source_type: SourceType) -> Option<&'static str> {
+    match source_type {
+        SourceType::Ring => Some("ring.wav"),
+        SourceType::PriorityRing => Some("priority-ring.wav"),
+        _ => None,
+    }
+}
+
+fn ringtone_path(app: &AppHandle, file_name: &str) -> Option<PathBuf> {
+    let config_dir = app.path().app_config_dir().ok()?;
+    Some(config_dir.join(file_name))
+}
+
+/// Adds an audio source for `source_type` to `output`, using a custom WAV
+/// ringtone file from the app config directory if one exists and is valid
+/// for this source type (Ring / PriorityRing), otherwise falling back to
+/// the built-in waveform tone.
+fn add_ring_source(
+    output: &PlaybackStream,
+    app: &AppHandle,
+    source_type: SourceType,
+    sample_rate: f32,
+    channels: usize,
+    volume: f32,
+) -> AudioSourceId {
+    if let Some(file_name) = custom_ringtone_file_name(source_type)
+        && let Some(path) = ringtone_path(app, file_name)
+        && path.exists()
+    {
+        let source = WavLoopSource::from_file_looping(&path, sample_rate, channels, volume);
+
+        match source {
+            Ok(source) => {
+                log::info!(
+                    "Using custom ringtone file for {:?}: {}",
+                    source_type,
+                    path.display()
+                );
+                return output.add_audio_source(Box::new(source));
+            }
+            Err(err) => {
+                log::warn!(
+                    "Failed to load custom ringtone file {} for {:?}: {err:?}. Falling back to built-in tone",
+                    path.display(),
+                    source_type,
+                );
+            }
+        }
+    }
+
+    output.add_audio_source(Box::new(SourceType::into_waveform_source(
+        source_type,
+        sample_rate,
+        channels,
+        volume,
+    )))
+}
 
 pub struct AudioManager {
     output: PlaybackStream,
@@ -355,7 +418,7 @@ impl AudioManager {
             return Err(AudioError::Other(anyhow::anyhow!(
                 "Tried to attach call but a call was already attached"
             ))
-            .into());
+                .into());
         }
 
         self.output_source_ids.insert(
@@ -403,6 +466,7 @@ impl AudioManager {
         let output = PlaybackStream::start(device, error_tx)?;
 
         let audio_config_clone = audio_config.clone();
+        let app_for_sources = app.clone();
         tauri::async_runtime::spawn(async move {
             while let Some(err) = error_rx.recv().await {
                 handle_playback_stream_error(
@@ -412,12 +476,30 @@ impl AudioManager {
                     device_type,
                     app.clone(),
                 )
-                .await;
+                    .await;
             }
             log::debug!("Playback stream error receiver closed");
         });
 
         let mut source_ids = HashMap::new();
+
+        // Ring and PriorityRing support custom WAV ringtone overrides from
+        // the app config directory, falling back to the built-in waveform
+        // tone if no override file is present or it fails to load.
+        let insert_ring_source =
+            |source_ids: &mut SourceMap, source_type: SourceType, volume: f32| {
+                source_ids.insert(
+                    source_type,
+                    add_ring_source(
+                        &output,
+                        &app_for_sources,
+                        source_type,
+                        sample_rate,
+                        channels,
+                        volume,
+                    ),
+                );
+            };
 
         let insert_waveform_source =
             |source_ids: &mut SourceMap, source_type: SourceType, volume: f32| {
@@ -432,8 +514,8 @@ impl AudioManager {
                 );
             };
 
-        insert_waveform_source(&mut source_ids, SourceType::Ring, audio_config.chime_volume);
-        insert_waveform_source(
+        insert_ring_source(&mut source_ids, SourceType::Ring, audio_config.chime_volume);
+        insert_ring_source(
             &mut source_ids,
             SourceType::PriorityRing,
             audio_config.chime_volume,
@@ -599,6 +681,6 @@ async fn handle_playback_stream_error(
             "error",
             FrontendError::from(Error::from(err)).non_critical(),
         )
-        .ok();
+            .ok();
     }
 }
