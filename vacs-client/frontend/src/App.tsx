@@ -4,18 +4,11 @@ import FunctionKeys from "./components/FunctionKeys.tsx";
 import CallQueue from "./components/CallQueue.tsx";
 import {useEffect} from "preact/hooks";
 import {invoke} from "./transport";
-import {Route, Switch} from "wouter";
-import LoginPage from "./pages/LoginPage.tsx";
-import {useAuthStore} from "./stores/auth-store.ts";
 import {setupAuthListeners} from "./listeners/auth-listener.ts";
-import ConnectPage from "./pages/ConnectPage.tsx";
-import SettingsPage from "./pages/SettingsPage.tsx";
 import telephone from "./assets/telephone.svg";
 import ErrorOverlay from "./components/overlays/ErrorOverlay.tsx";
 import {invokeSafe} from "./error.ts";
 import {setupErrorListeners} from "./listeners/error-listener.ts";
-import MissionPage from "./pages/MissionPage.tsx";
-import TelephonePage from "./pages/TelephonePage.tsx";
 import LinkButton from "./components/ui/LinkButton.tsx";
 import {setupSignalingListeners} from "./listeners/signaling-listener.ts";
 import PhoneButton from "./components/ui/PhoneButton.tsx";
@@ -29,20 +22,19 @@ import RadioButton from "./components/ui/RadioButton.tsx";
 import ConnectionTerminateOverlay from "./components/overlays/ConnectionTerminateOverlay.tsx";
 import {useConnectionStore} from "./stores/connection-store.ts";
 import PositionSelectOverlay from "./components/overlays/PositionSelectOverlay.tsx";
-import MainPage from "./pages/MainPage.tsx";
 import Tabs from "./components/Tabs.tsx";
 import {useProfileType} from "./stores/profile-store.ts";
 import {fetchSettings} from "./stores/settings-store.ts";
 import {useZoomHotkey} from "./hooks/zoom-hotkey-hook.ts";
-import RadioPage from "./pages/RadioPage.tsx";
 import CplButton from "./components/ui/CplButton.tsx";
 import {fetchRadioState, setupRadioListener} from "./listeners/radio-listener.ts";
+import Router from "./pages/Router.tsx";
 
 function App() {
     const connected = useConnectionStore(state => state.connectionState === "connected");
     const testing = useConnectionStore(state => state.connectionState === "test");
-    const authStatus = useAuthStore(state => state.status);
     const profileType = useProfileType();
+
     useZoomHotkey();
 
     useEffect(() => {
@@ -80,27 +72,11 @@ function App() {
                 <div className="flex flex-row w-full h-[calc(100%-10rem)] pl-1">
                     {/* Main Area */}
                     <div className="relative h-full w-[calc(100%-6rem)] bg-[#B5BBC6] border-l border-t border-r-2 border-b-2 border-gray-700 rounded-sm flex flex-row">
-                        <Switch>
-                            <Route path="/settings" component={SettingsPage} nest />
-                            <Route path="/mission" component={MissionPage} />
-                            <Route path="/radio" component={RadioPage} />
-                            <Route path="/" nest>
-                                {authStatus === "loading" ? (
-                                    <></>
-                                ) : authStatus === "unauthenticated" && !testing ? (
-                                    <LoginPage />
-                                ) : connected || testing ? (
-                                    <MainPage />
-                                ) : (
-                                    <ConnectPage />
-                                )}
-                                <Route path="/telephone" component={TelephonePage} />
-                            </Route>
-                        </Switch>
+                        <Router />
                     </div>
                     {/* Right Button Row */}
                     <div className="w-24 h-full px-2 pb-6 flex flex-col justify-between">
-                        <LinkButton path="/telephone" className="h-16 shrink-0">
+                        <LinkButton menu="telephone" className="h-16 shrink-0">
                             <img
                                 src={telephone}
                                 alt="Telephone"
