@@ -6,6 +6,7 @@ mod config;
 mod error;
 mod keybinds;
 mod platform;
+mod playback;
 mod radio;
 mod remote;
 mod secrets;
@@ -15,6 +16,8 @@ use crate::app::open_fatal_error_dialog;
 use crate::app::state::audio::AppStateAudioExt;
 use crate::app::state::http::HttpState;
 use crate::app::state::keybinds::AppStateKeybindsExt;
+use crate::app::state::playback::AppStatePlaybackExt;
+use crate::app::state::radio::AppStateRadioExt;
 use crate::app::state::{AppState, AppStateInner};
 use crate::audio::manager::AudioManagerHandle;
 use crate::build::VersionInfo;
@@ -22,6 +25,8 @@ use crate::config::{CLIENT_SETTINGS_FILE_NAME, Persistable, PersistedClientConfi
 use crate::error::{StartupError, StartupErrorExt};
 use crate::keybinds::engine::KeybindEngineHandle;
 use crate::platform::Capabilities;
+use crate::playback::recorder::PlaybackRecorderHandle;
+use crate::radio::RadioHandle;
 use crate::remote::{RemoteServer, RemoteServerHandle};
 use tauri::{App, Manager, RunEvent, WindowEvent};
 use tauri_plugin_deep_link::DeepLinkExt;
@@ -93,6 +98,10 @@ pub fn run() {
 
                 app.manage::<HttpState>(HttpState::new(app.handle())?);
                 app.manage::<AudioManagerHandle>(state.audio_manager_handle());
+                app.manage::<PlaybackRecorderHandle>(
+                    state.playback_recorder_handle(),
+                );
+                app.manage::<RadioHandle>(state.radio_handle());
                 app.manage::<AppState>(TokioMutex::new(state));
 
                 if capabilities.keybind_listener || capabilities.keybind_emitter {
@@ -173,6 +182,17 @@ pub fn run() {
             keybinds::commands::keybinds_set_binding,
             keybinds::commands::keybinds_set_radio_config,
             keybinds::commands::keybinds_set_transmit_config,
+            playback::commands::playback_clear,
+            playback::commands::playback_continue,
+            playback::commands::playback_delete,
+            playback::commands::playback_export,
+            playback::commands::playback_pause,
+            playback::commands::playback_get_enabled,
+            playback::commands::playback_list,
+            playback::commands::playback_seek,
+            playback::commands::playback_set_enabled,
+            playback::commands::playback_start,
+            playback::commands::playback_stop,
             radio::commands::radio_add_station,
             radio::commands::radio_set_station_state,
             radio::commands::radio_get_stations,

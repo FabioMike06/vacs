@@ -1,5 +1,6 @@
 use crate::app::window::WindowProvider;
 use crate::error::Error;
+use crate::playback::PlaybackConfig;
 use crate::radio::push_to_talk::PushToTalkRadio;
 use crate::radio::track_audio::TrackAudioRadio;
 use crate::radio::{DynRadio, RadioIntegration};
@@ -290,6 +291,8 @@ pub struct ClientConfig {
     pub test_profile_watcher_delay_ms: u64,
     #[serde(default)]
     pub remote: RemoteConfig,
+    #[serde(default)]
+    pub playback: PlaybackConfig,
     #[serde(default = "default_zoom_level")]
     pub zoom_level: f64,
     #[serde(default)]
@@ -319,6 +322,7 @@ impl Default for ClientConfig {
             extra_client_page_config: None,
             test_profile_watcher_delay_ms: 500,
             remote: RemoteConfig::default(),
+            playback: PlaybackConfig::default(),
             zoom_level: 1.0f64,
             clock_mode: ClockMode::default(),
         }
@@ -623,10 +627,12 @@ impl RadioConfig {
             RadioIntegration::TrackAudio => {
                 let endpoint = self.track_audio.as_ref().and_then(|c| c.endpoint.as_ref());
                 log::debug!("Initializing TrackAudio radio integration (endpoint: {endpoint:?})");
-                let radio = TrackAudioRadio::new(app, endpoint)
-                    .await
-                    .map_err(Error::from)?;
-                Ok(Some(Arc::new(radio)))
+                let radio = Arc::new(
+                    TrackAudioRadio::new(app.clone(), endpoint)
+                        .await
+                        .map_err(Error::from)?,
+                );
+                Ok(Some(radio))
             }
         }
     }

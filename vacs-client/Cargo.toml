@@ -27,11 +27,11 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true, features = ["ws"] }
 base64 = { workspace = true }
-cfg-if = { workspace = true }
 chacha20poly1305 = { workspace = true }
 config = { workspace = true }
 cookie_store = { workspace = true }
 futures-util = { workspace = true }
+hound = { workspace = true }
 keyboard-types = { workspace = true }
 keyring = { workspace = true }
 log = { workspace = true }
@@ -63,6 +63,8 @@ vacs-vatsim = { workspace = true, features = ["coverage"] }
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { workspace = true }
 tauri-plugin-prevent-default = { workspace = true, features = ["platform-windows"] }
+sysinfo = { workspace = true }
+wasapi = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2-core-graphics = { workspace = true }
@@ -72,4 +74,8 @@ tauri-plugin-prevent-default = { workspace = true }
 [target.'cfg(target_os = "linux")'.dependencies]
 ashpd = { workspace = true }
 futures-util = { workspace = true }
+pipewire = { workspace = true }
 tauri-plugin-prevent-default = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

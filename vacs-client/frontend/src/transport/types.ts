@@ -54,6 +54,17 @@ export type RemoteCommand =
     | "remote_is_enabled"
     | "remote_request_store_sync"
     | "remote_set_config"
+    | "playback_clear"
+    | "playback_continue"
+    | "playback_delete"
+    | "playback_export"
+    | "playback_pause"
+    | "playback_start"
+    | "playback_stop"
+    | "playback_get_enabled"
+    | "playback_list"
+    | "playback_seek"
+    | "playback_set_enabled"
     | "signaling_accept_call"
     | "signaling_add_ignored_client"
     | "signaling_connect"
@@ -103,7 +114,9 @@ export type RemoteEvent =
     | "webrtc:call-disconnected"
     | "webrtc:call-error"
     | "update:progress"
-    | "remote:status";
+    | "remote:status"
+    | "playback:clips-modified"
+    | "playback:progress";
 
 export type InvokeArgs = Record<string, unknown>;
 

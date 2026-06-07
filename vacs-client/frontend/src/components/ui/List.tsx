@@ -11,9 +11,10 @@ type ListProps = {
     setSelectedItem: (item: number) => void;
     defaultRows: number;
     row: (item: number, isSelected: boolean, onClick: () => void) => JSX.Element;
-    header: {title: string; className?: string}[];
+    header?: {title: string; className?: string}[];
     columnWidths: string[];
     className?: string;
+    rowHeight?: number;
     enableKeyboardNavigation?: boolean;
 };
 
@@ -22,6 +23,10 @@ function List(props: ListProps) {
         useList(props);
 
     const gridCols = `${props.columnWidths.join(" ")} 4rem`;
+    const gridRows =
+        props.header !== undefined
+            ? `${HEADER_HEIGHT_REM}rem repeat(${visibleItemIndices.length},1fr)`
+            : `repeat(${visibleItemIndices.length},1fr)`;
 
     return (
         <div
@@ -31,11 +36,11 @@ function List(props: ListProps) {
                 props.className,
             )}
             style={{
-                gridTemplateRows: `${HEADER_HEIGHT_REM}rem repeat(${visibleItemIndices.length},1fr)`,
+                gridTemplateRows: gridRows,
                 gridTemplateColumns: gridCols,
             }}
         >
-            {props.header.map((headerItem, idx) => (
+            {props.header?.map((headerItem, idx) => (
                 <div
                     key={idx}
                     className={clsx(
@@ -46,7 +51,7 @@ function List(props: ListProps) {
                     {headerItem.title}
                 </div>
             ))}
-            <div className="outline-0!"></div>
+            {props.header && <div className="outline-0!"></div>}
 
             {visibleItemIndices.map((itemIndex, idx) => {
                 const rowSpan = visibleItemIndices.length - 2;

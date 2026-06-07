@@ -1,6 +1,5 @@
 import {create} from "zustand/react";
-import {shouldStopBlinking, startBlink, stopBlink} from "./blink-store.ts";
-import {useCallStore} from "./call-store.ts";
+import {startBlink, tryStopBlink} from "./blink-store.ts";
 import {RadioState} from "../types/radio.ts";
 
 type RadioStoreState = {
@@ -18,10 +17,7 @@ export const useRadioStore = create<RadioStoreState>()(set => ({
         if (cpl) {
             startBlink();
         } else {
-            const {incomingCalls, callDisplay} = useCallStore.getState();
-            if (shouldStopBlinking(incomingCalls.length, callDisplay, false)) {
-                stopBlink();
-            }
+            tryStopBlink(null, null, false, null);
         }
 
         set({cpl});
