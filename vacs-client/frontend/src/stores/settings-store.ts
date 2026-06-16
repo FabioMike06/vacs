@@ -1,6 +1,6 @@
 import {create} from "zustand/react";
 import {invokeStrict} from "../error.ts";
-import {isTauri} from "../transport/index.ts";
+import {isTauri} from "../transport";
 import {ClientPageConfig, ClientPageSettings} from "../types/client.ts";
 import {CallConfig, ClockMode} from "../types/settings.ts";
 import {
@@ -11,6 +11,7 @@ import {
     withRadioLabels,
     withTransmitLabels,
 } from "../types/transmit.ts";
+import {useRadioStore} from "./radio-store.ts";
 import {useStationsStore} from "./stations-store.ts";
 
 type SettingsState = {
@@ -70,10 +71,19 @@ export const useSettingsStore = create<SettingsState>()(set => ({
 }));
 
 useSettingsStore.subscribe((state, prev) => {
-    if (state.callConfig.useDefaultCallSources === prev.callConfig.useDefaultCallSources) return;
-    const {stations, positionDefaultSources, setDefaultSource, getPositionDefaultSource} =
-        useStationsStore.getState();
-    setDefaultSource(getPositionDefaultSource(positionDefaultSources, stations));
+    if (state.callConfig.useDefaultCallSources !== prev.callConfig.useDefaultCallSources) {
+        const {stations, positionDefaultSources, setDefaultSource, getPositionDefaultSource} =
+            useStationsStore.getState();
+        setDefaultSource(getPositionDefaultSource(positionDefaultSources, stations));
+    }
+
+    if (
+        state.radioConfig?.cplMode !== prev.radioConfig?.cplMode &&
+        state.radioConfig?.cplMode === "Fast"
+    ) {
+        const {cpl, setCpl} = useRadioStore.getState();
+        if (cpl) setCpl(false);
+    }
 });
 
 async function fetchClientPageConfigs() {
