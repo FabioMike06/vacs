@@ -8870,7 +8870,7 @@ dependencies = [
 
 [[package]]
 name = "vacs-client"
-version = "2.4.0"
+version = "2.4.0-cicalino"
 dependencies = [
  "anyhow",
  "ashpd",

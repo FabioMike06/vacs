@@ -280,15 +280,21 @@ pub async fn audio_set_volume(
         VolumeType::Chime => {
             audio_manager.set_output_volume(SourceType::Ring, volume);
             audio_manager.set_output_volume(SourceType::PriorityRing, volume);
-            audio_manager.set_output_volume(SourceType::RingOneshot, volume);
+            audio_manager.set_output_volume(SourceType::RingOneShot, volume);
             state.config.audio.chime_volume = volume;
+
+            let is_none = state.active_call_id().is_none();
+            let outgoing_call_id = state.outgoing_call_id().is_none();
+            let incoming_call_leng = state.incoming_calls_len();
 
             let should_preview = state.active_call_id().is_none()
                 && state.outgoing_call_id().is_none()
                 && state.incoming_calls_len() == 0;
-
+            //log should preview
+            log::info!("Active call: {is_none} {outgoing_call_id} {incoming_call_leng} ");
+            log::info!("Should preview chime: {should_preview}");
             if should_preview {
-                audio_manager.restart(SourceType::RingOneshot);
+                audio_manager.restart(SourceType::RingOneShot);
             }
         }
     }

@@ -163,16 +163,19 @@ impl AudioSource for WavLoopSource {
     }
 
     fn start(&mut self) {
+        log::trace!("WavLoopSource::start; samples={} playing_was={}", self.samples.len(), self.playing);
         self.playing = true;
     }
 
     fn stop(&mut self) {
+        log::trace!("WavLoopSource::stop; samples={}", self.samples.len());
         self.playing = false;
         self.position = 0.0;
         self.silence_remaining = 0;
     }
 
     fn restart(&mut self) {
+        log::trace!("WavLoopSource::restart; samples={} looping={}", self.samples.len(), self.looping);
         self.position = 0.0;
         self.playing = true;
         self.silence_remaining = 0;
@@ -180,5 +183,27 @@ impl AudioSource for WavLoopSource {
 
     fn set_volume(&mut self, volume: f32) {
         self.volume = volume;
+    }
+
+    fn skip(&mut self, duration: Duration) {
+        let len = self.samples.len();
+        if len == 0 {
+            return;
+        }
+
+        let delta = duration.as_secs_f32() * self.input_sample_rate;
+        self.position = (self.position + delta).min(len as f32);
+        self.silence_remaining = 0;
+    }
+
+    fn rewind(&mut self, duration: Duration) {
+        let len = self.samples.len();
+        if len == 0 {
+            return;
+        }
+
+        let delta = duration.as_secs_f32() * self.input_sample_rate;
+        self.position = (self.position - delta).max(0.0);
+        self.silence_remaining = 0;
     }
 }

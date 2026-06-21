@@ -29,12 +29,14 @@ const AUDIO_STREAM_ERROR_CHANNEL_SIZE: usize = 32;
 type SourceMap = HashMap<SourceType, AudioSourceId>;
 
 /// File names used for custom ringtone overrides, keyed by SourceType.
-/// Only Ring and PriorityRing support custom WAV files; everything else
-/// falls back to the built-in waveform tone.
-fn custom_ringtone_file_name(source_type: SourceType) -> Option<&'static str> {
+/// Only Ring, RingOneShot, and PriorityRing support custom WAV files;
+/// everything else falls back to the built-in waveform tone.
+/// The bool indicates whether the override should loop.
+fn custom_ringtone_file_name(source_type: SourceType) -> Option<(&'static str, bool)> {
     match source_type {
-        SourceType::Ring => Some("ring.wav"),
-        SourceType::PriorityRing => Some("priority-ring.wav"),
+        SourceType::Ring => Some(("ring.wav", true)),
+        SourceType::RingOneShot => Some(("ring.wav", false)),
+        SourceType::PriorityRing => Some(("priority-ring.wav", true)),
         _ => None,
     }
 }
@@ -56,11 +58,15 @@ fn add_ring_source(
     channels: usize,
     volume: f32,
 ) -> AudioSourceId {
-    if let Some(file_name) = custom_ringtone_file_name(source_type)
+    if let Some((file_name, looping)) = custom_ringtone_file_name(source_type)
         && let Some(path) = ringtone_path(app, file_name)
         && path.exists()
     {
-        let source = WavLoopSource::from_file_looping(&path, sample_rate, channels, volume);
+        let source = if looping {
+            WavLoopSource::from_file_looping(&path, sample_rate, channels, volume)
+        } else {
+            WavLoopSource::from_file_oneshot(&path, sample_rate, channels, volume)
+        };
 
         match source {
             Ok(source) => {
@@ -370,7 +376,7 @@ impl AudioManager {
                 SourceType::RingbackOneshot => {
                     self.output.restart_audio_source(*source_id);
                 }
-                SourceType::Ring | SourceType::Click if self.speaker.is_none() => {
+                SourceType::Click if self.speaker.is_none() => {
                     self.output.restart_audio_source(*source_id);
                 }
                 _ => {}
@@ -383,15 +389,15 @@ impl AudioManager {
             speaker.set_volume(*source_id, volume);
 
             match source_type {
-                SourceType::Ring | SourceType::Click => {
+                SourceType::Click => {
                     speaker.restart_audio_source(*source_id);
                 }
                 _ => {}
             }
         } else if !self.output_source_ids.contains_key(&source_type) {
             log::trace!(
-                "Tried to set output volume {volume} for missing audio source {source_type:?}, skipping"
-            );
+            "Tried to set output volume {volume} for missing audio source {source_type:?}, skipping"
+        );
         }
     }
 
@@ -488,33 +494,36 @@ impl AudioManager {
         // tone if no override file is present or it fails to load.
         let insert_ring_source =
             |source_ids: &mut SourceMap, source_type: SourceType, volume: f32| {
-                source_ids.insert(
+                let id = add_ring_source(
+                    &output,
+                    &app_for_sources,
                     source_type,
-                    add_ring_source(
-                        &output,
-                        &app_for_sources,
-                        source_type,
-                        sample_rate,
-                        channels,
-                        volume,
-                    ),
+                    sample_rate,
+                    channels,
+                    volume,
                 );
+                log::trace!("insert_ring_source mapped {:?} -> id={:?}", source_type, id);
+                source_ids.insert(source_type, id);
             };
 
         let insert_waveform_source =
             |source_ids: &mut SourceMap, source_type: SourceType, volume: f32| {
-                source_ids.insert(
+                let id = output.add_audio_source(Box::new(SourceType::into_waveform_source(
                     source_type,
-                    output.add_audio_source(Box::new(SourceType::into_waveform_source(
-                        source_type,
-                        sample_rate,
-                        channels,
-                        volume,
-                    ))),
-                );
+                    sample_rate,
+                    channels,
+                    volume,
+                )));
+                log::trace!("insert_waveform_source mapped {:?} -> id={:?}", source_type, id);
+                source_ids.insert(source_type, id);
             };
 
         insert_ring_source(&mut source_ids, SourceType::Ring, audio_config.chime_volume);
+        insert_ring_source(
+            &mut source_ids,
+            SourceType::RingOneShot,
+            audio_config.chime_volume,
+        );
         insert_ring_source(
             &mut source_ids,
             SourceType::PriorityRing,
