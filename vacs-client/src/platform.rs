@@ -23,6 +23,7 @@ pub struct Capabilities {
 
 static CAPABILITIES_CACHE: OnceLock<Capabilities> = OnceLock::new();
 
+#[allow(dead_code)]
 impl Capabilities {
     pub fn get() -> &'static Self {
         CAPABILITIES_CACHE.get_or_init(Self::detect)
@@ -70,6 +71,7 @@ impl Default for Capabilities {
 }
 
 #[cfg(target_os = "linux")]
+#[allow(dead_code)]
 fn check_wayland_global_shortcuts_portal() -> bool {
     log::debug!("Checking availability of Wayland Global Shortcuts portal");
 
@@ -101,6 +103,7 @@ fn check_wayland_global_shortcuts_portal() -> bool {
 }
 
 #[cfg(target_os = "linux")]
+#[allow(dead_code)]
 fn check_pipewire() -> bool {
     let socket_path = std::env::var("PIPEWIRE_RUNTIME_DIR")
         .ok()
@@ -259,6 +262,7 @@ impl Platform {
         )
     }
 
+    #[allow(dead_code)]
     pub const fn as_str(&self) -> &'static str {
         match self {
             Platform::Windows => "Windows",
