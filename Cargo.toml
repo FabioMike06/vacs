@@ -34,7 +34,7 @@ bytes = "1.11.1"
 chacha20poly1305 = "0.11.0"
 config = "0.15.23"
 cookie_store = "0.22.1"
-cpal = "0.17.3"
+cpal = { version = "0.18.1", features = ["pipewire"] }
 csv = "1.4.0"
 dashmap = "6.2.1"
 flate2 = "1.1.9"
@@ -59,11 +59,7 @@ octocrab = "0.53.0"
 # Required to fix audiopus_sys deprecation warning, until opus releases version with replaced dependency
 opus = { git = "https://github.com/SpaceManiac/opus-rs", rev = "559876660603dc8079a053e03e6438766f669e69" }
 parking_lot = "0.12.5"
-# Pinned to 0.8.0: pipewire 0.9.x pulls libspa 0.9 which requires
-# cookie-factory ^0.3.3, conflicting with redis-protocol 6.0.0's
-# `=0.3.2` pin (via fred -> tower-sessions-redis-store -> vacs-server).
-# Bump once either upstream relaxes its constraint.
-pipewire = "0.8.0"
+pipewire = "0.10.0"
 pretty_assertions = "1.4.1"
 quote = "1.0.45"
 rand = "0.10.1"
@@ -124,6 +120,13 @@ windows = { version = "0.62.2", features = [
     "Win32_System_Threading"
 ] }
 wiremock = "0.6.5"
+
+[patch.crates-io]
+# redis-protocol 6.0.0 pins cookie-factory to the exact version "=0.3.2", which
+# conflicts with libspa >=0.9 (needs cookie-factory ^0.3.3) and blocks bumping
+# pipewire past 0.8.0. This branch is currently unreleased and relaxes the pin to "^0.3.2";
+# drop once upstream (aembke/redis-protocol.rs) publishes 6.1.0.
+redis-protocol = { git = "https://github.com/aembke/redis-protocol.rs", rev = "cdd4535155437d08171a68c9965963fc1092eeb6" }
 
 [workspace.lints.clippy]
 semicolon-if-nothing-returned = "warn"

@@ -11,10 +11,11 @@
 
 use super::{LoopbackCapture, LoopbackEvent};
 use crate::playback::{PlaybackError, TapId};
-use pipewire::context::Context;
+use pipewire::context::ContextRc;
+use pipewire::core::CoreRc;
 use pipewire::keys;
 use pipewire::link::Link;
-use pipewire::main_loop::MainLoop;
+use pipewire::main_loop::MainLoopRc;
 use pipewire::properties::properties;
 use pipewire::spa::param::ParamType;
 use pipewire::spa::param::audio::{AudioFormat, AudioInfoRaw};
@@ -22,7 +23,7 @@ use pipewire::spa::pod::Pod;
 use pipewire::spa::pod::serialize::PodSerializer;
 use pipewire::spa::pod::{Object, Value};
 use pipewire::spa::utils::{Direction, SpaTypes};
-use pipewire::stream::{Stream, StreamFlags, StreamListener, StreamState as PwStreamState};
+use pipewire::stream::{StreamFlags, StreamListener, StreamRc, StreamState as PwStreamState};
 use pipewire::types::ObjectType;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -108,7 +109,7 @@ struct Capture {
     target_node_id: u32,
     tap: TapId,
     // Owning the listeners keeps the callbacks alive.
-    _stream: Stream,
+    _stream: StreamRc,
     _listener: StreamListener<CaptureUserData>,
     /// Registry id of our own capture stream's node, populated when its node global
     /// arrives.
@@ -126,52 +127,43 @@ fn spawn_pipewire_thread(
 ) -> Result<(ShutdownFn, JoinHandle<()>), PlaybackError> {
     // We use a oneshot to surface init failures from the thread back to the caller
     // synchronously, so `AfvNativePipewireCapture::start` returns a meaningful error.
-    let (init_tx, init_rx) = std::sync::mpsc::sync_channel::<Result<MainLoopHandle, String>>(1);
+    let (init_tx, init_rx) = std::sync::mpsc::sync_channel::<Result<(), String>>(1);
+    // Cross-thread shutdown signal: the receiver is attached to the PipeWire loop
+    // inside `run_main_loop`, so `quit()` always executes on the loop's own thread.
+    // Sending after the loop thread has exited just returns an error.
+    let (quit_tx, quit_rx) = pipewire::channel::channel::<()>();
     let tx_thread = tx.clone();
 
     let thread = std::thread::Builder::new()
         .name("vacs-playback-pipewire".to_owned())
-        .spawn(move || run_main_loop(tx_thread, init_tx))
+        .spawn(move || run_main_loop(tx_thread, init_tx, quit_rx))
         .map_err(PlaybackError::Io)?;
 
-    let handle = match init_rx.recv() {
-        Ok(Ok(h)) => h,
+    match init_rx.recv() {
+        Ok(Ok(())) => {}
         Ok(Err(err)) => return Err(PlaybackError::Source(err)),
         Err(_) => {
             return Err(PlaybackError::Source(
                 "PipeWire capture thread exited before init".to_owned(),
             ));
         }
-    };
+    }
 
-    let weak = handle;
-    let shutdown = Box::new(move || weak.quit());
+    let shutdown = Box::new(move || {
+        let _ = quit_tx.send(());
+    });
 
     Ok((shutdown, thread))
 }
 
-struct MainLoopHandle {
-    weak: pipewire::main_loop::WeakMainLoop,
-}
-// SAFETY: `WeakMainLoop` wraps a `pw_main_loop *` whose `quit()` is documented as
-// thread-safe (it just calls `pw_loop_invoke`/`pw_loop_signal_event` internally).
-unsafe impl Send for MainLoopHandle {}
-
-impl MainLoopHandle {
-    fn quit(self) {
-        if let Some(strong) = self.weak.upgrade() {
-            strong.quit();
-        }
-    }
-}
-
 fn run_main_loop(
     tx: mpsc::Sender<LoopbackEvent>,
-    init_tx: std::sync::mpsc::SyncSender<Result<MainLoopHandle, String>>,
+    init_tx: std::sync::mpsc::SyncSender<Result<(), String>>,
+    quit_rx: pipewire::channel::Receiver<()>,
 ) {
     pipewire::init();
 
-    let mainloop = match MainLoop::new(None) {
+    let mainloop = match MainLoopRc::new(None) {
         Ok(m) => m,
         Err(err) => {
             let _ = init_tx.send(Err(format!("PipeWire MainLoop::new failed: {err}")));
@@ -179,7 +171,13 @@ fn run_main_loop(
         }
     };
 
-    let context = match Context::new(&mainloop) {
+    // Dispatch quit requests from the `ShutdownFn` onto this thread.
+    let _quit_receiver = quit_rx.attach(mainloop.loop_(), {
+        let mainloop = mainloop.clone();
+        move |()| mainloop.quit()
+    });
+
+    let context = match ContextRc::new(&mainloop, None) {
         Ok(c) => c,
         Err(err) => {
             let _ = init_tx.send(Err(format!("PipeWire Context::new failed: {err}")));
@@ -187,7 +185,7 @@ fn run_main_loop(
         }
     };
 
-    let core = match context.connect(None) {
+    let core = match context.connect_rc(None) {
         Ok(c) => c,
         Err(err) => {
             let _ = init_tx.send(Err(format!("PipeWire Context::connect failed: {err}")));
@@ -195,7 +193,7 @@ fn run_main_loop(
         }
     };
 
-    let registry = match core.get_registry() {
+    let registry = match core.get_registry_rc() {
         Ok(r) => r,
         Err(err) => {
             let _ = init_tx.send(Err(format!("PipeWire core.get_registry failed: {err}")));
@@ -312,10 +310,7 @@ fn run_main_loop(
         })
         .register();
 
-    let handle = MainLoopHandle {
-        weak: mainloop.downgrade(),
-    };
-    if init_tx.send(Ok(handle)).is_err() {
+    if init_tx.send(Ok(())).is_err() {
         log::warn!("caller disappeared before PipeWire init completed");
         return;
     }
@@ -324,17 +319,13 @@ fn run_main_loop(
     mainloop.run();
     log::debug!("PipeWire main loop exited");
 
-    // Stream/listener drops (in `captures`) tear down before unsafe bindings outlive
-    // anything; explicit drop here makes that ordering obvious.
-    drop(captures);
-    drop(registry);
-    drop(core);
-    drop(context);
-    drop(mainloop);
+    // Teardown order is enforced by the Rc keepalive graph (streams and the
+    // registry own the core, the core owns the context, the context owns the
+    // loop), so plain scope-end drops destroy everything safely.
 }
 
 fn build_capture(
-    core: &pipewire::core::Core,
+    core: &CoreRc,
     node_id: u32,
     tap: TapId,
     tx: mpsc::Sender<LoopbackEvent>,
@@ -353,7 +344,7 @@ fn build_capture(
         "node.autoconnect" => "false",
     };
 
-    let stream = Stream::new(core, "vacs-playback-tap", props)
+    let stream = StreamRc::new(core.clone(), "vacs-playback-tap", props)
         .map_err(|e| format!("Stream::new failed: {e}"))?;
 
     let user_data = CaptureUserData {
@@ -413,21 +404,29 @@ fn build_capture(
 
             // We requested interleaved F32LE, so samples for all channels live in datas[0].
             let data = &mut datas[0];
+            let offset = data.chunk().offset() as usize;
             let size = data.chunk().size() as usize;
             if size == 0 {
                 return;
             }
 
             let Some(bytes) = data.data() else { return };
-            let stride = std::mem::size_of::<f32>();
-            if bytes.len() < size {
-                log::warn!("short PipeWire buffer ({} < {size})", bytes.len());
+            // Valid samples live at `offset..offset + size`; clamp both to the
+            // mapped region (like pw-cat), since producers may set an offset.
+            let offset = offset.min(bytes.len());
+            let size = size.min(bytes.len() - offset);
+            if size == 0 {
+                log::warn!(
+                    "PipeWire chunk outside mapped buffer ({} bytes)",
+                    bytes.len()
+                );
                 return;
             }
 
+            let stride = std::mem::size_of::<f32>();
             let n_samples = size / stride;
             let mut samples = Vec::with_capacity(n_samples);
-            for chunk_bytes in bytes[..size].chunks_exact(stride) {
+            for chunk_bytes in bytes[offset..offset + size].chunks_exact(stride) {
                 samples.push(f32::from_le_bytes([
                     chunk_bytes[0],
                     chunk_bytes[1],
@@ -488,7 +487,7 @@ fn build_capture(
 /// Pair up known target outputs with our stream's inputs and create any missing
 /// links via the `link-factory`. Idempotent: only links beyond `capture.links.len()`
 /// are created.
-fn try_link(core: &pipewire::core::Core, capture: &mut Capture) {
+fn try_link(core: &CoreRc, capture: &mut Capture) {
     let Some(my_node_id) = capture.own_node_id else {
         return;
     };
