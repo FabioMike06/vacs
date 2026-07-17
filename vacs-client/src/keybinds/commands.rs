@@ -1,14 +1,13 @@
+use crate::app::PersistedClientConfig;
 use crate::app::state::AppState;
-use crate::config::{
-    CLIENT_SETTINGS_FILE_NAME, FrontendKeybindsConfig, FrontendRadioConfig, FrontendTransmitConfig,
-    KeybindsConfig, Persistable, PersistedClientConfig, RadioConfig, TransmitConfig, TransmitMode,
-};
+use crate::config::{CLIENT_SETTINGS_FILE_NAME, Persistable};
 use crate::error::Error;
 use crate::keybinds::engine::KeybindEngineHandle;
-use crate::keybinds::{Keybind, KeybindsError};
+use crate::keybinds::{
+    FrontendKeybindsConfig, FrontendTransmitConfig, Keybind, KeybindsConfig, TransmitConfig,
+    parse_key_code,
+};
 use crate::platform::Capabilities;
-use crate::radio::{RadioIntegration, RadioState};
-use keyboard_types::Code;
 use tauri::{AppHandle, Manager, State};
 
 #[tauri::command]
@@ -44,12 +43,16 @@ pub async fn keybinds_set_transmit_config(
 
         let transmit_config: TransmitConfig = transmit_config.try_into()?;
 
-        validate_afv_radio_integration_config(&transmit_config, &state.config.client.radio)?;
+        state.config.client.radio.validate(&transmit_config).await?;
 
         keybind_engine
             .write()
             .await
-            .set_config(&transmit_config, &state.config.client.keybinds)
+            .set_config(
+                &transmit_config,
+                &state.config.client.keybinds,
+                state.config.client.radio.integration.is_some(),
+            )
             .await?;
 
         state.config.client.transmit_config = transmit_config;
@@ -87,11 +90,7 @@ pub async fn keybinds_set_binding(
         return Err(Error::CapabilityNotAvailable("Keybinds".to_string()));
     }
 
-    let code = code
-        .as_ref()
-        .map(|s| s.parse::<Code>())
-        .transpose()
-        .map_err(|_| Error::Other(Box::new(anyhow::anyhow!("Unrecognized key code: {}. Please report this error in our GitHub repository's issue tracker.", code.unwrap_or_default()))))?;
+    let code = parse_key_code(code)?;
 
     let persisted_client_config: PersistedClientConfig = {
         let mut state = app_state.lock().await;
@@ -108,7 +107,11 @@ pub async fn keybinds_set_binding(
         keybind_engine
             .write()
             .await
-            .set_config(&state.config.client.transmit_config, &keybinds_config)
+            .set_config(
+                &state.config.client.transmit_config,
+                &keybinds_config,
+                state.config.client.radio.integration.is_some(),
+            )
             .await?;
 
         state.config.client.keybinds = keybinds_config;
@@ -122,66 +125,6 @@ pub async fn keybinds_set_binding(
     persisted_client_config.persist(&config_dir, CLIENT_SETTINGS_FILE_NAME)?;
 
     Ok(())
-}
-
-#[tauri::command]
-#[vacs_macros::log_err]
-pub async fn keybinds_get_radio_config(
-    app_state: State<'_, AppState>,
-) -> Result<FrontendRadioConfig, Error> {
-    Ok(app_state.lock().await.config.client.radio.clone().into())
-}
-
-#[tauri::command]
-#[vacs_macros::log_err]
-pub async fn keybinds_set_radio_config(
-    app: AppHandle,
-    app_state: State<'_, AppState>,
-    keybind_engine: State<'_, KeybindEngineHandle>,
-    radio_config: FrontendRadioConfig,
-) -> Result<(), Error> {
-    let capabilities = Capabilities::default();
-    if !capabilities.keybind_listener {
-        return Err(Error::CapabilityNotAvailable("Keybinds".to_string()));
-    }
-
-    let persisted_client_config: PersistedClientConfig = {
-        let mut state = app_state.lock().await;
-
-        let radio_config: RadioConfig = radio_config.try_into()?;
-
-        validate_afv_radio_integration_config(&state.config.client.transmit_config, &radio_config)?;
-
-        keybind_engine
-            .write()
-            .await
-            .set_radio_config(&radio_config)
-            .await?;
-
-        state.config.client.radio = radio_config;
-        state.config.client.clone().into()
-    };
-
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .expect("Cannot get config directory");
-    persisted_client_config.persist(&config_dir, CLIENT_SETTINGS_FILE_NAME)?;
-
-    Ok(())
-}
-
-#[tauri::command]
-#[vacs_macros::log_err]
-pub async fn keybinds_get_radio_state(
-    keybind_engine: State<'_, KeybindEngineHandle>,
-) -> Result<RadioState, Error> {
-    let capabilities = Capabilities::default();
-    if !capabilities.keybind_listener {
-        return Ok(RadioState::NotConfigured);
-    }
-
-    Ok(keybind_engine.read().await.radio_state())
 }
 
 #[tauri::command]
@@ -218,27 +161,19 @@ pub fn keybinds_open_system_shortcuts_settings() -> Result<(), Error> {
 
 #[tauri::command]
 #[vacs_macros::log_err]
-pub async fn keybinds_reconnect_radio(
-    keybind_engine: State<'_, KeybindEngineHandle>,
-) -> Result<(), Error> {
-    keybind_engine.read().await.reconnect_radio().await
-}
-
-fn validate_afv_radio_integration_config(
-    transmit_config: &TransmitConfig,
-    radio_config: &RadioConfig,
-) -> Result<(), Error> {
-    if transmit_config.mode == TransmitMode::RadioIntegration
-        && radio_config.integration == RadioIntegration::AudioForVatsim
-        && let Some(selected_key) = transmit_config.radio_push_to_talk
-        && let Some(afv_key) = radio_config.audio_for_vatsim.as_ref().and_then(|c| c.emit)
-        && afv_key == selected_key
+pub async fn keybinds_is_portal_shortcut_bound(
+    #[cfg_attr(not(target_os = "linux"), allow(unused_variables))] keybind: Keybind,
+) -> Result<bool, Error> {
+    #[cfg(target_os = "linux")]
     {
-        return Err(KeybindsError::Other(
-            "AFV emit key must be distinct from your radio integration push-to-talk key"
-                .to_string(),
-        )
-        .into());
+        use crate::keybinds::runtime;
+        return Ok(runtime::is_portal_shortcut_bound(keybind.into()).await);
     }
-    Ok(())
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        return Err(Error::Other(Box::new(anyhow::anyhow!(
+            "Checking portal shortcut bindings is only supported on Linux"
+        ))));
+    }
 }

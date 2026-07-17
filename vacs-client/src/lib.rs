@@ -13,6 +13,7 @@ mod secrets;
 mod signaling;
 mod utils;
 
+use crate::app::PersistedClientConfig;
 use crate::app::open_fatal_error_dialog;
 use crate::app::state::audio::AppStateAudioExt;
 use crate::app::state::http::HttpState;
@@ -22,7 +23,7 @@ use crate::app::state::radio::AppStateRadioExt;
 use crate::app::state::{AppState, AppStateInner};
 use crate::audio::manager::AudioManagerHandle;
 use crate::build::VersionInfo;
-use crate::config::{CLIENT_SETTINGS_FILE_NAME, Persistable, PersistedClientConfig};
+use crate::config::{CLIENT_SETTINGS_FILE_NAME, Persistable};
 use crate::error::{StartupError, StartupErrorExt};
 use crate::keybinds::engine::KeybindEngineHandle;
 use crate::platform::Capabilities;
@@ -90,26 +91,35 @@ pub fn run() {
 
                 let capabilities = Capabilities::default();
 
-                let state = AppStateInner::new(app.handle())?;
+                let state = AppStateInner::new(app.handle()).await?;
 
                 let transmit_config = state.config.client.transmit_config.clone();
                 let call_control_config = state.config.client.keybinds.clone();
                 let keybind_engine = state.keybind_engine_handle();
                 let remote_config = state.config.client.remote.clone();
+                let radio = state.radio_handle();
+                let radio_config = state.config.client.radio.clone();
+                let radio_integration_enabled = state.config.client.radio.integration.is_some();
 
                 app.manage::<HttpState>(HttpState::new(app.handle())?);
                 app.manage::<AudioManagerHandle>(state.audio_manager_handle());
                 app.manage::<PlaybackRecorderHandle>(
                     state.playback_recorder_handle(),
                 );
-                app.manage::<RadioHandle>(state.radio_handle());
                 app.manage::<AppState>(TokioMutex::new(state));
+
+                *radio.write() = radio_config
+                    .radio(app.handle().clone())
+                    .await
+                    .map_startup_err(StartupError::Radio)?;
+
+                app.manage::<RadioHandle>(radio);
 
                 if capabilities.keybind_listener || capabilities.keybind_emitter {
                     keybind_engine
                         .write()
                         .await
-                        .set_config(&transmit_config, &call_control_config)
+                        .set_config(&transmit_config, &call_control_config, radio_integration_enabled)
                         .await
                         .map_startup_err(StartupError::Keybinds)?;
                 } else {
@@ -177,13 +187,10 @@ pub fn run() {
             auth::commands::auth_open_oauth_url,
             keybinds::commands::keybinds_get_external_binding,
             keybinds::commands::keybinds_get_keybinds_config,
-            keybinds::commands::keybinds_get_radio_config,
-            keybinds::commands::keybinds_get_radio_state,
             keybinds::commands::keybinds_get_transmit_config,
+            keybinds::commands::keybinds_is_portal_shortcut_bound,
             keybinds::commands::keybinds_open_system_shortcuts_settings,
-            keybinds::commands::keybinds_reconnect_radio,
             keybinds::commands::keybinds_set_binding,
-            keybinds::commands::keybinds_set_radio_config,
             keybinds::commands::keybinds_set_transmit_config,
             playback::commands::playback_clear,
             playback::commands::playback_continue,
@@ -198,8 +205,12 @@ pub fn run() {
             playback::commands::playback_stop,
             radio::commands::radio_add_station,
             radio::commands::radio_fast_couple,
+            radio::commands::radio_get_config,
+            radio::commands::radio_reconnect,
+            radio::commands::radio_set_config,
             radio::commands::radio_set_station_state,
             radio::commands::radio_get_stations,
+            radio::commands::radio_get_state,
             signaling::commands::signaling_accept_call,
             signaling::commands::signaling_add_ignored_client,
             signaling::commands::signaling_connect,
@@ -242,6 +253,7 @@ pub fn run() {
                     }
 
                     app_handle.state::<KeybindEngineHandle>().write().await.shutdown();
+                    app_handle.state::<RadioHandle>().write().take();
 
                     app_handle
                         .state::<TokioMutex<RemoteServer>>()

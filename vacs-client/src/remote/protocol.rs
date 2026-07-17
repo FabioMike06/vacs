@@ -191,12 +191,9 @@ pub enum RemoteCommand {
     KeybindsSetTransmitConfig,
     KeybindsGetKeybindsConfig,
     KeybindsSetBinding,
-    KeybindsGetRadioConfig,
-    KeybindsSetRadioConfig,
-    KeybindsGetRadioState,
     KeybindsGetExternalBinding,
     KeybindsOpenSystemShortcutsSettings,
-    KeybindsReconnectRadio,
+    KeybindsIsPortalShortcutBound,
 
     PlaybackGetEnabled,
     PlaybackSetEnabled,
@@ -212,8 +209,12 @@ pub enum RemoteCommand {
 
     RadioAddStation,
     RadioFastCouple,
+    RadioGetConfig,
+    RadioReconnect,
+    RadioSetConfig,
     RadioSetStationState,
     RadioGetStations,
+    RadioGetState,
 
     RemoteBroadcastStoreSync,
     RemoteGetConfig,

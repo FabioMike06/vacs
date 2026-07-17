@@ -1,8 +1,8 @@
 use crate::app::state::AppState;
 use crate::app::state::http::HttpState;
 use crate::app::state::signaling::ConnectionState;
+use crate::app::{ClockMode, FrontendCallConfig, FrontendClientPageSettings};
 use crate::audio::manager::AudioManagerHandle;
-use crate::config::{ClockMode, FrontendCallConfig, FrontendClientPageSettings};
 use crate::error::Error;
 use crate::keybinds::engine::KeybindEngineHandle;
 use crate::platform::Capabilities;
@@ -12,6 +12,7 @@ use crate::playback::commands::{
     playback_stop,
 };
 use crate::playback::recorder::PlaybackRecorderHandle;
+use crate::radio::RadioHandle;
 use crate::remote::RemoteStatus;
 use crate::remote::commands::FrontendRemoteConfigWithStatus;
 use crate::remote::protocol::{
@@ -560,31 +561,14 @@ async fn dispatch_command(
                 keybinds_set_binding(app.clone(), app_state, keybind_engine, code, keybind).await,
             )
         }
-        KeybindsGetRadioConfig => {
-            let app_state = app.state::<AppState>();
-            dispatch(keybinds_get_radio_config(app_state).await)
-        }
-        KeybindsSetRadioConfig => {
-            let radio_config = args!(args, "radioConfig");
-            let app_state = app.state::<AppState>();
-            let keybind_engine = app.state::<KeybindEngineHandle>();
-            dispatch(
-                keybinds_set_radio_config(app.clone(), app_state, keybind_engine, radio_config)
-                    .await,
-            )
-        }
-        KeybindsGetRadioState => {
-            let keybind_engine = app.state::<KeybindEngineHandle>();
-            dispatch(keybinds_get_radio_state(keybind_engine).await)
-        }
         KeybindsGetExternalBinding => {
             let keybind = args!(args, "keybind");
             let keybind_engine = app.state::<KeybindEngineHandle>();
             dispatch(keybinds_get_external_binding(keybind_engine, keybind).await)
         }
-        KeybindsReconnectRadio => {
-            let keybind_engine = app.state::<KeybindEngineHandle>();
-            dispatch(keybinds_reconnect_radio(keybind_engine).await)
+        KeybindsIsPortalShortcutBound => {
+            let keybind = args!(args, "keybind");
+            dispatch(keybinds_is_portal_shortcut_bound(keybind).await)
         }
 
         PlaybackGetEnabled => {
@@ -650,21 +634,43 @@ async fn dispatch_command(
 
         RadioAddStation => {
             let callsign = args!(args, "callsign");
-            let keybind_engine = app.state::<KeybindEngineHandle>();
-            dispatch(radio_add_station(keybind_engine, callsign).await)
+            let radio = app.state::<RadioHandle>();
+            dispatch(radio_add_station(radio, callsign).await)
         }
         RadioFastCouple => {
+            let radio = app.state::<RadioHandle>();
+            dispatch(radio_fast_couple(radio).await)
+        }
+
+        RadioGetConfig => {
+            let app_state = app.state::<AppState>();
+            dispatch(radio_get_config(app_state).await)
+        }
+        RadioReconnect => {
+            let radio = app.state::<RadioHandle>();
+            dispatch(radio_reconnect(radio).await)
+        }
+        RadioSetConfig => {
+            let radio_config = args!(args, "radioConfig");
+            let app_state = app.state::<AppState>();
+            let radio = app.state::<RadioHandle>();
             let keybind_engine = app.state::<KeybindEngineHandle>();
-            dispatch(radio_fast_couple(keybind_engine).await)
+            dispatch(
+                radio_set_config(app.clone(), app_state, keybind_engine, radio, radio_config).await,
+            )
         }
         RadioSetStationState => {
             let (frequency, update) = args!(args, "frequency", "update");
-            let keybind_engine = app.state::<KeybindEngineHandle>();
-            dispatch(radio_set_station_state(keybind_engine, frequency, update).await)
+            let radio = app.state::<RadioHandle>();
+            dispatch(radio_set_station_state(radio, frequency, update).await)
         }
         RadioGetStations => {
-            let keybind_engine = app.state::<KeybindEngineHandle>();
-            dispatch(radio_get_stations(keybind_engine).await)
+            let radio = app.state::<RadioHandle>();
+            dispatch(radio_get_stations(radio).await)
+        }
+        RadioGetState => {
+            let radio = app.state::<RadioHandle>();
+            dispatch(radio_get_state(radio).await)
         }
 
         SignalingConnect => {
