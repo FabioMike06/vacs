@@ -4,6 +4,7 @@ use crate::config::{CLIENT_SETTINGS_FILE_NAME, Persistable};
 use crate::error::Error;
 use crate::keybinds::engine::KeybindEngineHandle;
 use crate::platform::Capabilities;
+use crate::playback::recorder::PlaybackRecorderHandle;
 use crate::radio::{
     DynRadio, Frequency, FrontendRadioConfig, RadioConfig, RadioHandle, RadioState, RadioStation,
     StationStateUpdate,
@@ -33,6 +34,7 @@ pub async fn radio_set_config(
     app_state: State<'_, AppState>,
     keybind_engine: State<'_, KeybindEngineHandle>,
     radio_handle: State<'_, RadioHandle>,
+    playback_recorder: State<'_, PlaybackRecorderHandle>,
     radio_config: FrontendRadioConfig,
 ) -> Result<(), Error> {
     let capabilities = Capabilities::default();
@@ -50,6 +52,16 @@ pub async fn radio_set_config(
     };
 
     radio_handle.write().take();
+
+    // The recorder outlives the radio it was gating on: left running, it would keep capturing
+    // with the dead radio's stale event stream — forever, if the new integration is one
+    // `make_source` doesn't support and thus never re-creates it. `shutdown` cancels the
+    // recorder's background task and awaits its exit, including the underlying source's
+    // capture teardown.
+    let old_recorder = playback_recorder.write().take();
+    if let Some(recorder) = old_recorder {
+        recorder.shutdown().await;
+    }
 
     let new_radio = radio_config.radio(app.clone()).await?;
 

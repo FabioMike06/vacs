@@ -133,11 +133,13 @@ impl PlaybackConfig {
         match recorder::PlaybackRecorder::spawn(app.clone(), self.clone(), clip_dir, source).await {
             Ok(recorder) => {
                 let handle = app.state::<PlaybackRecorderHandle>();
-                let mut slot = handle.write();
-                if let Some(existing) = slot.take() {
-                    existing.shutdown();
+                // Swap the new recorder in before awaiting the old one's shutdown: leaving the
+                // slot empty across the await lets a concurrent `start` install a recorder that
+                // the write below would silently clobber without shutting it down.
+                let existing = (*handle.write()).replace(recorder);
+                if let Some(existing) = existing {
+                    existing.shutdown().await;
                 }
-                *slot = Some(recorder);
                 log::debug!("recorder running");
                 Ok(())
             }
@@ -178,13 +180,13 @@ fn make_source(
     cfg_select! {
         target_os = "linux" => {
             match radio.as_any().downcast::<crate::radio::track_audio::TrackAudioRadio>() {
-                Ok(radio) => Ok(Box::new(source::TrackAudioLoopbackSource::new(radio))),
+                Ok(radio) => Ok(Box::new(source::TrackAudioLoopbackSource::new(radio.events(), radio.state_handle()))),
                 Err(_) => Err(PlaybackError::Unsupported),
             }
         }
         target_os = "windows" => {
             let radio = match radio.as_any().downcast::<crate::radio::track_audio::TrackAudioRadio>() {
-                Ok(radio) => return Ok(Box::new(source::TrackAudioLoopbackSource::new(radio))),
+                Ok(radio) => return Ok(Box::new(source::TrackAudioLoopbackSource::new(radio.events(), radio.state_handle()))),
                 Err(radio) => radio,
             };
 
