@@ -41,14 +41,18 @@ use crate::keybinds::{KeyEvent, Keybind, KeybindsError};
 use keyboard_types::{Code, KeyState};
 use std::fmt::Debug;
 use std::sync::Arc;
-use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::mpsc::UnboundedSender;
 
 /// Trait for platform-specific keybind listeners that capture global keyboard events.
 ///
 /// Implementations must be thread-safe (`Send + Sync`) and start asynchronously to allow
 /// for platform-specific initialization (e.g., connecting to XDG portal on Wayland).
+///
+/// Listeners send captured events into the channel provided by the caller; the
+/// keybind engine hands the same channel to all active input sources (keyboard
+/// listener, joystick service) so its event loop reads a single merged stream.
 pub trait KeybindListener: Send + Sync + Debug + 'static {
-    async fn start() -> Result<(Self, UnboundedReceiver<KeyEvent>), KeybindsError>
+    async fn start(key_event_tx: UnboundedSender<KeyEvent>) -> Result<Self, KeybindsError>
     where
         Self: Sized;
 
@@ -96,6 +100,7 @@ cfg_select! {
         mod stub;
         pub use linux::LinuxKeybindEmitter as PlatformEmitter;
         pub use linux::LinuxKeybindListener as PlatformListener;
+        pub use linux::{is_portal_shortcut_bound, PortalShortcutId};
     }
     _ => {
         mod stub;

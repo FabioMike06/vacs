@@ -4,11 +4,13 @@ use crate::app::state::webrtc::AppStateWebrtcExt;
 use crate::audio::manager::AudioManagerHandle;
 use crate::audio::source_type::SourceType;
 use crate::audio::{
-    AudioDevices, AudioHosts, AudioVolumes, ClientAudioDeviceType, PlaybackDeviceType, VolumeType,
+    AudioConfig, AudioDevices, AudioHosts, AudioVolumes, ClientAudioDeviceType,
+    PersistedAudioConfig, PlaybackDeviceType, VolumeType,
 };
-use crate::config::{AUDIO_SETTINGS_FILE_NAME, AudioConfig, Persistable, PersistedAudioConfig};
+use crate::config::{AUDIO_SETTINGS_FILE_NAME, Persistable};
 use crate::error::Error;
 use crate::keybinds::engine::KeybindEngineHandle;
+use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State};
 use vacs_audio::device::{DeviceSelector, DeviceType};
@@ -70,13 +72,13 @@ pub async fn audio_set_host(
             app.clone(),
             &audio_config,
             PlaybackDeviceType::Output,
-            false,
+            None,
         )?;
         audio_manager.write().switch_playback_device(
             app.clone(),
             &audio_config,
             PlaybackDeviceType::Speaker,
-            false,
+            None,
         )?;
 
         state.config.audio = audio_config;
@@ -174,7 +176,7 @@ pub async fn audio_set_device(
                     app.clone(),
                     &audio_config,
                     PlaybackDeviceType::Output,
-                    false,
+                    None,
                 )?;
 
                 state.config.audio = audio_config;
@@ -189,7 +191,7 @@ pub async fn audio_set_device(
                     app.clone(),
                     &audio_config,
                     PlaybackDeviceType::Speaker,
-                    false,
+                    None,
                 )?;
 
                 state.config.audio = audio_config;
@@ -209,9 +211,10 @@ pub async fn audio_set_device(
             audio_manager.attach_input_level_meter(
                 app.clone(),
                 &state.config.audio,
-                Box::new(move |level| {
+                Arc::new(move |level| {
                     app.emit("audio:input-level", level).ok();
                 }),
+                None,
             )?;
         }
 
@@ -347,9 +350,10 @@ pub async fn audio_start_input_level_meter(
     audio_manager.attach_input_level_meter(
         app.clone(),
         audio_config,
-        Box::new(move |level| {
+        Arc::new(move |level| {
             app.emit("audio:input-level", level).ok();
         }),
+        None,
     )?;
 
     Ok(())

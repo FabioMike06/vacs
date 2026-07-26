@@ -55,7 +55,7 @@ pub struct AppStateInner {
 pub type AppState = TokioMutex<AppStateInner>;
 
 impl AppStateInner {
-    pub fn new(app: &AppHandle) -> Result<Self, StartupError> {
+    pub async fn new(app: &AppHandle) -> Result<Self, StartupError> {
         let config_dir = app
             .path()
             .app_config_dir()
@@ -76,13 +76,16 @@ impl AppStateInner {
                 AudioManager::new(app.clone(), &config.audio)
                     .map_startup_err(StartupError::Audio)?,
             )),
-            keybind_engine: Arc::new(TokioRwLock::new(KeybindEngine::new(
-                app.clone(),
-                &config.client.transmit_config,
-                &config.client.keybinds,
-                &config.client.radio,
-                shutdown_token.child_token(),
-            ))),
+            keybind_engine: Arc::new(TokioRwLock::new(
+                KeybindEngine::new(
+                    app.clone(),
+                    &config.client.transmit_config,
+                    &config.client.keybinds,
+                    config.client.radio.integration.is_some(),
+                    shutdown_token.child_token(),
+                )
+                .await,
+            )),
             playback_recorder: Arc::new(RwLock::new(None)),
             radio: Arc::new(RwLock::new(None)),
             shutdown_token,
@@ -101,10 +104,11 @@ impl AppStateInner {
         })
     }
 
-    pub fn shutdown(&self) {
+    pub async fn shutdown(&self) {
         self.shutdown_token.cancel();
-        if let Some(recorder) = self.playback_recorder.read().as_ref() {
-            recorder.shutdown();
+        let recorder = self.playback_recorder.write().take();
+        if let Some(recorder) = recorder {
+            recorder.shutdown().await;
         }
     }
 }

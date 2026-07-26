@@ -31,6 +31,8 @@ pub enum ProblemType {
     DesktopOnly,
     /// One or more command arguments were invalid or missing.
     InvalidArgument,
+    /// The message could not be parsed (malformed JSON or unknown command).
+    InvalidMessage,
     /// The command did not complete within the time limit.
     Timeout,
     /// An application-level error originating from the backend.
@@ -42,6 +44,7 @@ impl ProblemType {
         match self {
             Self::DesktopOnly => "urn:vacs:error:remote:desktop-only",
             Self::InvalidArgument => "urn:vacs:error:remote:invalid-argument",
+            Self::InvalidMessage => "urn:vacs:error:remote:invalid-message",
             Self::Timeout => "urn:vacs:error:remote:timeout",
             Self::ApplicationError => "urn:vacs:error:remote:application",
         }
@@ -100,6 +103,15 @@ impl ProblemDetails {
             ProblemType::InvalidArgument,
             "Invalid argument",
             format!("Failed to parse argument '{key}': {reason}"),
+        )
+        .non_critical()
+    }
+
+    pub fn invalid_message() -> Self {
+        Self::new(
+            ProblemType::InvalidMessage,
+            "Invalid message",
+            "The message could not be parsed; it may use an unknown command or be malformed",
         )
         .non_critical()
     }
@@ -171,6 +183,8 @@ pub enum RemoteCommand {
     AppGetVersion,
     AppGetClockMode,
     AppSetClockMode,
+    AppGetCplMode,
+    AppSetCplMode,
 
     AudioGetHosts,
     AudioSetHost,
@@ -191,12 +205,13 @@ pub enum RemoteCommand {
     KeybindsSetTransmitConfig,
     KeybindsGetKeybindsConfig,
     KeybindsSetBinding,
-    KeybindsGetRadioConfig,
-    KeybindsSetRadioConfig,
-    KeybindsGetRadioState,
+    KeybindsCaptureJoystickButton,
+    KeybindsCancelJoystickCapture,
+    KeybindsListJoystickDevices,
+    KeybindsSetIgnoredJoysticks,
     KeybindsGetExternalBinding,
     KeybindsOpenSystemShortcutsSettings,
-    KeybindsReconnectRadio,
+    KeybindsIsPortalShortcutBound,
 
     PlaybackGetEnabled,
     PlaybackSetEnabled,
@@ -212,12 +227,17 @@ pub enum RemoteCommand {
 
     RadioAddStation,
     RadioFastCouple,
+    RadioGetConfig,
+    RadioReconnect,
+    RadioSetConfig,
     RadioSetStationState,
     RadioGetStations,
+    RadioGetState,
 
     RemoteBroadcastStoreSync,
     RemoteGetConfig,
     RemoteGetSessionState,
+    RemoteIsEnabled,
     RemoteRequestStoreSync,
 
     SignalingConnect,
@@ -266,6 +286,7 @@ pub enum RemoteEvent {
     RadioStationRemoved,
     RadioStationUpdated,
     RadioStationsSynced,
+    RemoteStatus,
     SignalingAcceptIncomingCall,
     SignalingAddIncomingToCallList,
     SignalingAmbiguousPosition,
@@ -310,6 +331,7 @@ impl RemoteEvent {
         Self::RadioStationRemoved,
         Self::RadioStationUpdated,
         Self::RadioStationsSynced,
+        Self::RemoteStatus,
         Self::SignalingAcceptIncomingCall,
         Self::SignalingAddIncomingToCallList,
         Self::SignalingAmbiguousPosition,
@@ -354,6 +376,7 @@ impl RemoteEvent {
             Self::RadioStationRemoved => "radio:station-removed",
             Self::RadioStationUpdated => "radio:station-updated",
             Self::RadioStationsSynced => "radio:stations-synced",
+            Self::RemoteStatus => "remote:status",
             Self::SignalingAcceptIncomingCall => "signaling:accept-incoming-call",
             Self::SignalingAddIncomingToCallList => "signaling:add-incoming-to-call-list",
             Self::SignalingAmbiguousPosition => "signaling:ambiguous-position",

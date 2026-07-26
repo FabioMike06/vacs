@@ -23,7 +23,9 @@ use trackaudio::{
 /// Capacity of the [`TrackAudioRadio`] event fan-out broadcast channel.
 const EVENT_FANOUT_CAPACITY: usize = 256;
 
-#[derive(Clone)]
+// Deliberately not `Clone`: `Drop` cancels the shared cancellation token (killing the events
+// task), so a dropped by-value clone would tear down the original radio's machinery. The radio
+// is only ever shared via `Arc` (see `RadioConfig::radio`).
 pub struct TrackAudioRadio {
     #[allow(dead_code)]
     app: AppHandle,
@@ -92,20 +94,19 @@ impl TrackAudioRadio {
         Ok(radio)
     }
 
-    /// Subscribe to a fan-out of every [`trackaudio::Event`] received by this radio.
+    /// Independent, cloneable handle to this radio's event stream. Safe for long-lived
+    /// consumers (e.g. the playback recorder) to hold onto without keeping the radio itself
+    /// alive - subscribing via the returned `Sender` doesn't require the radio to still exist.
     #[cfg_attr(not(any(target_os = "linux", target_os = "windows")), allow(dead_code))]
-    pub fn subscribe_events(&self) -> broadcast::Receiver<trackaudio::Event> {
-        self.events_tx.subscribe()
+    pub fn events(&self) -> broadcast::Sender<trackaudio::Event> {
+        self.events_tx.clone()
     }
 
-    /// Returns the cached `headset` flag for `frequency`, or `None` if the station is unknown.
+    /// Independent handle to this radio's cached connection/station state. Safe for
+    /// long-lived consumers to hold onto without keeping the radio itself alive.
     #[cfg_attr(not(any(target_os = "linux", target_os = "windows")), allow(dead_code))]
-    pub fn headset_for_frequency(&self, frequency: Frequency) -> Option<bool> {
-        self.state
-            .stations
-            .read()
-            .get(&frequency)
-            .map(|s| s.headset)
+    pub fn state_handle(&self) -> Arc<TrackAudioState> {
+        self.state.clone()
     }
 
     async fn events_task(
@@ -198,14 +199,14 @@ impl TrackAudioRadio {
 
                         if let Some(radio) = radio {
                             log::info!("trackaudio radio state connected; starting recorder");
-                            state.config.client.playback.start(app, radio).await;
+                            let _ = state.config.client.playback.start(app, radio).await;
                         }
                     }
                     _ => {
                         let handle = app.state::<PlaybackRecorderHandle>();
                         let existing = handle.write().take();
                         if let Some(recorder) = existing {
-                            recorder.shutdown();
+                            recorder.shutdown().await;
                             log::info!(
                                 "trackaudio radio state changed to {connection_state:?}; stopped active recorder"
                             );
@@ -426,7 +427,7 @@ impl Drop for TrackAudioRadio {
 }
 
 #[derive(Default)]
-struct TrackAudioState {
+pub(crate) struct TrackAudioState {
     connected: AtomicBool,
     voice_connected: AtomicBool,
     transmitting: AtomicBool,
@@ -509,6 +510,12 @@ impl TrackAudioState {
         self.transmitting.store(false, Ordering::Relaxed);
         self.receiving.write().clear();
         self.stations.write().clear();
+    }
+
+    /// Returns the cached `headset` flag for `frequency`, or `None` if the station is unknown.
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
+    pub(crate) fn headset_for_frequency(&self, frequency: Frequency) -> Option<bool> {
+        self.stations.read().get(&frequency).map(|s| s.headset)
     }
 
     fn set_transmitting(&self, app: &AppHandle, active: bool) {
