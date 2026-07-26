@@ -13,7 +13,7 @@ use std::ffi::c_void;
 use std::ptr::NonNull;
 use std::thread;
 use std::time::Duration;
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio::sync::oneshot;
 
 #[derive(Debug)]
@@ -35,11 +35,12 @@ pub struct MacOsKeybindListener {
 }
 
 impl KeybindListener for MacOsKeybindListener {
-    async fn start(key_event_tx: UnboundedSender<KeyEvent>) -> Result<Self, KeybindsError>
+    async fn start() -> Result<(Self, UnboundedReceiver<KeyEvent>), KeybindsError>
     where
         Self: Sized,
     {
         log::debug!("Starting macos keybind listener");
+        let (key_event_tx, key_event_rx) = unbounded_channel::<KeyEvent>();
         let (startup_res_tx, start_res_rx) =
             oneshot::channel::<Result<ShutdownSource, KeybindsError>>();
 
@@ -62,10 +63,13 @@ impl KeybindListener for MacOsKeybindListener {
             .map_err(|err| KeybindsError::Listener(format!("Failed to spawn thread: {err}")))?;
 
         match tokio::time::timeout(Duration::from_secs(1), start_res_rx).await {
-            Ok(Ok(Ok(shutdown_source))) => Ok(Self {
-                shutdown_source,
-                thread_handle: Some(thread_handle),
-            }),
+            Ok(Ok(Ok(shutdown_source))) => Ok((
+                Self {
+                    shutdown_source,
+                    thread_handle: Some(thread_handle),
+                },
+                key_event_rx,
+            )),
             Ok(Ok(Err(err))) => Err(err),
             Ok(Err(_)) => Err(KeybindsError::Listener(
                 "MacOsKeybindListener startup channel closed".to_string(),

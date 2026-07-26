@@ -14,26 +14,24 @@ ignore = [
     # Timing side-channels are not considered exploitable due to network noise, caching, and rate limiting of version endpoint.
     # We will upgrade once jsonwebtoken / rsa provide a constant-time implementation.
     { id = "RUSTSEC-2023-0071", reason = "Transitively via jsonwebtoken/octocrab; only used for local GitHub App JWT signing. No RSA API exposed; low side-channel risk." },
-    { id = "RUSTSEC-2024-0370", reason = "tauri dependency" },
-    { id = "RUSTSEC-2024-0411", reason = "tauri dependency" },
-    { id = "RUSTSEC-2024-0412", reason = "tauri dependency" },
     { id = "RUSTSEC-2024-0413", reason = "tauri dependency" },
+    { id = "RUSTSEC-2024-0416", reason = "tauri dependency" },
+    { id = "RUSTSEC-2025-0057", reason = "tauri dependency" },
+    { id = "RUSTSEC-2024-0412", reason = "tauri dependency" },
+    { id = "RUSTSEC-2024-0418", reason = "tauri dependency" },
+    { id = "RUSTSEC-2024-0411", reason = "tauri dependency" },
+    { id = "RUSTSEC-2024-0417", reason = "tauri dependency" },
     { id = "RUSTSEC-2024-0414", reason = "tauri dependency" },
     { id = "RUSTSEC-2024-0415", reason = "tauri dependency" },
-    { id = "RUSTSEC-2024-0416", reason = "tauri dependency" },
-    { id = "RUSTSEC-2024-0417", reason = "tauri dependency" },
-    { id = "RUSTSEC-2024-0418", reason = "tauri dependency" },
-    { id = "RUSTSEC-2024-0419", reason = "tauri dependency" },
     { id = "RUSTSEC-2024-0420", reason = "tauri dependency" },
-    { id = "RUSTSEC-2024-0436", reason = "tower-sessions-redis-store dependency" },
-    { id = "RUSTSEC-2025-0057", reason = "tauri dependency" },
+    { id = "RUSTSEC-2024-0419", reason = "tauri dependency" },
+    { id = "RUSTSEC-2024-0370", reason = "tauri dependency" },
+    { id = "RUSTSEC-2025-0081", reason = "tauri dependency" },
     { id = "RUSTSEC-2025-0075", reason = "tauri dependency" },
     { id = "RUSTSEC-2025-0080", reason = "tauri dependency" },
-    { id = "RUSTSEC-2025-0081", reason = "tauri dependency" },
-    { id = "RUSTSEC-2025-0098", reason = "tauri dependency" },
     { id = "RUSTSEC-2025-0100", reason = "tauri dependency" },
-    { id = "RUSTSEC-2026-0194", reason = "tauri/ashpd/rfd dependency" },
-    { id = "RUSTSEC-2026-0195", reason = "tauri/ashpd/rfd dependency" },
+    { id = "RUSTSEC-2025-0098", reason = "tauri dependency" },
+    { id = "RUSTSEC-2024-0436", reason = "tower-sessions-redis-store dependency" },
 ]
 
 [licenses]
@@ -51,8 +49,6 @@ exceptions = [
     { allow = ["CC0-1.0"], crate = "notify" },
     { allow = ["CC0-1.0"], crate = "tiny-keccak" },
     { allow = ["Zlib"], crate = "foldhash" },
-    { allow = ["Zlib"], crate = "sdl3-sys" },
-    { allow = ["Zlib"], crate = "sdl3-src" },
 ]
 
 [licenses.private]
@@ -70,8 +66,7 @@ allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 allow-git = [
     "https://github.com/MorpheusXAUT/axum-login",
     "https://github.com/maxcountryman/tower-sessions-stores",
-    "https://github.com/SpaceManiac/opus-rs",
-    "https://github.com/aembke/redis-protocol.rs"
+    "https://github.com/SpaceManiac/opus-rs"
 ]
 
 [sources.allow-org]

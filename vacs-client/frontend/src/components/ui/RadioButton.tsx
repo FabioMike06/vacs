@@ -44,7 +44,7 @@ function RadioButton() {
             radioState !== "NotConfigured" &&
             (radioState === "Disconnected" || radioState === "Error")
         ) {
-            void invokeStrict("radio_reconnect");
+            void invokeStrict("keybinds_reconnect_radio");
         }
     };
 

@@ -1,8 +1,7 @@
-use crate::app::PersistedClientConfig;
 use crate::app::state::AppState;
 use crate::audio::PlaybackDeviceType;
 use crate::audio::manager::AudioManagerHandle;
-use crate::config::{CLIENT_SETTINGS_FILE_NAME, Persistable};
+use crate::config::{CLIENT_SETTINGS_FILE_NAME, Persistable, PersistedClientConfig};
 use crate::error::Error;
 use crate::playback::recorder::{CLIP_PROGRESS_EVENT, PlaybackRecorderHandle};
 use crate::playback::{ClipMeta, PlaybackError};
@@ -57,7 +56,7 @@ pub async fn playback_set_enabled(
                 RadioState::NotConfigured | RadioState::Disconnected
             )
         {
-            playback_config.start(&app, radio).await?;
+            playback_config.start(&app, radio).await;
         } else {
             log::info!("playback enabled in config but no radio is active");
         }
@@ -67,7 +66,7 @@ pub async fn playback_set_enabled(
         let handle = app.state::<PlaybackRecorderHandle>();
         let existing = handle.write().take();
         if let Some(recorder) = existing {
-            recorder.shutdown().await;
+            recorder.shutdown();
             log::info!("playback disabled; stopped active recorder");
         }
     }
@@ -143,7 +142,7 @@ pub async fn playback_start(
                     if progress >= 1.0 {
                         let recorder = app.state::<PlaybackRecorderHandle>();
                         if let Some(r) = recorder.write().as_mut() {
-                            r.set_playing_source_id(None);
+                            r.set_playing_source_id(None)
                         }
                     }
                 })),
@@ -169,7 +168,7 @@ pub async fn playback_start(
     }
 
     if let Some(r) = recorder.write().as_mut() {
-        r.set_playing_source_id(Some((source_id, actual_device_type)));
+        r.set_playing_source_id(Some((source_id, actual_device_type)))
     }
 
     Ok(())

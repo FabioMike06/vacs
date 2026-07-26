@@ -99,10 +99,10 @@ impl Default for PlaybackConfig {
 }
 
 impl PlaybackConfig {
-    pub async fn start(&self, app: &AppHandle, radio: DynRadio) -> Result<(), PlaybackError> {
+    pub async fn start(&self, app: &AppHandle, radio: DynRadio) {
         if !self.enabled {
             log::info!("playback disabled by config");
-            return Ok(());
+            return;
         }
 
         let source = match make_source(radio) {
@@ -111,11 +111,11 @@ impl PlaybackConfig {
                 log::warn!(
                     "playback enabled in config, but capture is not supported on this platform"
                 );
-                return Err(PlaybackError::Unsupported);
+                return;
             }
             Err(err) => {
                 log::error!("failed to build playback source: {err}");
-                return Err(err);
+                return;
             }
         };
 
@@ -123,7 +123,7 @@ impl PlaybackConfig {
             Ok(d) => d,
             Err(err) => {
                 log::error!("failed to resolve app_data_dir: {err}");
-                return Err(PlaybackError::Other(err.into()));
+                return;
             }
         };
         let clip_dir = app_data_dir.join("playback");
@@ -133,19 +133,15 @@ impl PlaybackConfig {
         match recorder::PlaybackRecorder::spawn(app.clone(), self.clone(), clip_dir, source).await {
             Ok(recorder) => {
                 let handle = app.state::<PlaybackRecorderHandle>();
-                // Swap the new recorder in before awaiting the old one's shutdown: leaving the
-                // slot empty across the await lets a concurrent `start` install a recorder that
-                // the write below would silently clobber without shutting it down.
-                let existing = (*handle.write()).replace(recorder);
-                if let Some(existing) = existing {
-                    existing.shutdown().await;
+                let mut slot = handle.write();
+                if let Some(existing) = slot.take() {
+                    existing.shutdown();
                 }
+                *slot = Some(recorder);
                 log::debug!("recorder running");
-                Ok(())
             }
             Err(err) => {
                 log::error!("failed to start recorder: {err}");
-                Err(err)
             }
         }
     }
@@ -178,20 +174,9 @@ fn make_source(
     #[cfg_attr(target_os = "macos", allow(unused_variables))] radio: DynRadio,
 ) -> Result<Box<dyn source::PlaybackSource>, PlaybackError> {
     cfg_select! {
-        target_os = "linux" => {
+        any(target_os = "linux", target_os = "windows") => {
             match radio.as_any().downcast::<crate::radio::track_audio::TrackAudioRadio>() {
-                Ok(radio) => Ok(Box::new(source::TrackAudioLoopbackSource::new(radio.events(), radio.state_handle()))),
-                Err(_) => Err(PlaybackError::Unsupported),
-            }
-        }
-        target_os = "windows" => {
-            let radio = match radio.as_any().downcast::<crate::radio::track_audio::TrackAudioRadio>() {
-                Ok(radio) => return Ok(Box::new(source::TrackAudioLoopbackSource::new(radio.events(), radio.state_handle()))),
-                Err(radio) => radio,
-            };
-
-            match radio.downcast::<crate::radio::push_to_talk::PushToTalkRadio>() {
-                Ok(_) => Ok(Box::new(source::AudioForVatsimLoopbackSource::new())),
+                Ok(radio) => Ok(Box::new(source::TrackAudioLoopbackSource::new(radio))),
                 Err(_) => Err(PlaybackError::Unsupported),
             }
         }

@@ -31,10 +31,10 @@ axum-prometheus = "0.10.0"
 base64 = "0.22.1"
 biquad = "0.6.0"
 bytes = "1.11.1"
-chacha20poly1305 = "0.11.0"
+chacha20poly1305 = "0.10.1"
 config = "0.15.23"
 cookie_store = "0.22.1"
-cpal = { version = "0.18.1", features = ["pipewire"] }
+cpal = "0.17.3"
 csv = "1.4.0"
 dashmap = "6.1.0"
 flate2 = "1.1.9"
@@ -55,38 +55,24 @@ notify-debouncer-full = "0.7.0"
 objc2-core-foundation = "0.3.1"
 objc2-core-graphics = "0.3.1"
 oauth2 = { version = "5.0.0", default-features = false }
-octocrab = "0.54.0"
+octocrab = "0.53.0"
 # Required to fix audiopus_sys deprecation warning, until opus releases version with replaced dependency
 opus = { git = "https://github.com/SpaceManiac/opus-rs", rev = "559876660603dc8079a053e03e6438766f669e69" }
 parking_lot = "0.12.5"
-pipewire = "0.10.0"
+# Pinned to 0.8.0: pipewire 0.9.x pulls libspa 0.9 which requires
+# cookie-factory ^0.3.3, conflicting with redis-protocol 6.0.0's
+# `=0.3.2` pin (via fred -> tower-sessions-redis-store -> vacs-server).
+# Bump once either upstream relaxes its constraint.
+pipewire = "0.8.0"
 pretty_assertions = "1.4.1"
-proc-macro2 = "1.0.95"
 quote = "1.0.45"
 rand = "0.10.1"
 regex = "1.12.3"
 reqwest = { version = "0.13.4", features = ["cookies", "json", "query", "rustls"] }
 rfd = { version = "0.17.2", features = ["common-controls-v6"] }
 ringbuf = "0.5.0"
-rubato = "4.0.0"
+rubato = "3.0.0"
 rustls = { version = "0.23.40", features = ["aws-lc-rs"] }
-sdl3 = { version = "0.18.4", features = ["build-from-source-static"] }
-# Slim the vendored SDL3 static build down to the joystick subsystem (we use SDL solely
-# for global joystick button capture); notably no-sdl-video avoids X11/Wayland build deps.
-sdl3-sys = { version = "0.6.7", features = [
-    # Required for a video-less build on Linux; no effect on Windows/macOS.
-    "sdl-unix-console-build",
-    "no-sdl-video",
-    "no-sdl-audio",
-    "no-sdl-gpu",
-    "no-sdl-render",
-    "no-sdl-camera",
-    "no-sdl-haptic",
-    "no-sdl-power",
-    "no-sdl-sensor",
-    "no-sdl-dialog",
-    "no-sdl-tray",
-] }
 semver = { version = "1.0.28", features = ["serde"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.150"
@@ -106,10 +92,10 @@ tempfile = "3.27.0"
 test-log = { version = "0.2.21", features = ["trace"] }
 thiserror = "2.0.18"
 tokio = { version = "1.52.3", features = ["rt", "rt-multi-thread", "macros", "process", "signal", "sync", "time"] }
-tokio-tungstenite = { version = "0.30.0", features = ["rustls", "rustls-tls-native-roots"] }
+tokio-tungstenite = { version = "0.29.0", features = ["rustls", "rustls-tls-native-roots"] }
 tokio-util = "0.7.18"
 toml = "1.1.2"
-tower-http = "0.7.0"
+tower-http = "0.6.11"
 tower-sessions = { version = "0.15.0", features = ["signed"] }
 # Required to update tower-sessions to v0.15.0 until a new version of tower-sessions-redis-store is actually released...
 tower-sessions-redis-store = { git = "https://github.com/maxcountryman/tower-sessions-stores", rev = "be0f230fadb4ca0496d4cabc946ae7778eee37e6" }
@@ -125,7 +111,7 @@ vacs-server = { path = "vacs-server" }
 vacs-signaling = { path = "vacs-signaling" }
 vacs-vatsim = { path = "vacs-vatsim", default-features = false }
 vacs-webrtc = { path = "vacs-webrtc" }
-vergen-git2 = { version = "10.0.0", features = ["build", "cargo", "rustc"] }
+vergen-git2 = { version = "9.1.0", features = ["build", "cargo", "rustc"] }
 wasapi = "0.23.0"
 webrtc = "0.17.1"
 windows = { version = "0.62.2", features = [
@@ -139,20 +125,5 @@ windows = { version = "0.62.2", features = [
 ] }
 wiremock = "0.6.5"
 
-[patch.crates-io]
-# redis-protocol 6.0.0 pins cookie-factory to the exact version "=0.3.2", which
-# conflicts with libspa >=0.9 (needs cookie-factory ^0.3.3) and blocks bumping
-# pipewire past 0.8.0. This branch is currently unreleased and relaxes the pin to "^0.3.2";
-# drop once upstream (aembke/redis-protocol.rs) publishes 6.1.0.
-redis-protocol = { git = "https://github.com/aembke/redis-protocol.rs", rev = "cdd4535155437d08171a68c9965963fc1092eeb6" }
-
 [workspace.lints.clippy]
 semicolon-if-nothing-returned = "warn"
-
-# Build the vendored SDL3 with release settings even in dev builds. The cmake
-# crate maps opt-level 0 to CMAKE_BUILD_TYPE=Debug, which on MSVC compiles SDL
-# against the debug CRT (/MDd) and conflicts with the release CRT rustc always
-# links (LNK4098). SDL is a C dependency we never step through anyway.
-[profile.dev.package.sdl3-sys]
-opt-level = 2
-debug = false

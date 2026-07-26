@@ -34,14 +34,6 @@ pub enum LoopbackEvent {
     },
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-pub enum CaptureSource {
-    #[default]
-    TrackAudio,
-    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-    AudioForVatsim,
-}
-
 /// Platform-agnostic interface to a loopback capture backend.
 ///
 /// Implementations spawn whatever OS resources they need (PipeWire main loop on Linux,
@@ -50,7 +42,7 @@ pub enum CaptureSource {
 #[cfg_attr(not(any(target_os = "linux", target_os = "windows")), allow(dead_code))]
 pub trait LoopbackCapture: Send + 'static {
     /// Start capturing. Returns the handle and the event receiver.
-    fn start(source: CaptureSource) -> Result<(Self, mpsc::Receiver<LoopbackEvent>), PlaybackError>
+    fn start() -> Result<(Self, mpsc::Receiver<LoopbackEvent>), PlaybackError>
     where
         Self: Sized;
 

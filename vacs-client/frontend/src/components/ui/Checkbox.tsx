@@ -1,12 +1,10 @@
 import "../../styles/checkbox.css";
 import {TargetedEvent} from "preact";
 import {invokeSafe} from "../../error.ts";
-import clsx from "clsx";
 
 type CheckboxProps = {
     name: string;
     checked: boolean;
-    className?: string;
     onChange?: (e: TargetedEvent<HTMLInputElement>) => void;
     muted?: boolean;
     disabled?: boolean;
@@ -26,7 +24,7 @@ function Checkbox(props: CheckboxProps) {
                 }
                 props.onChange?.(event);
             }}
-            className={clsx("checkbox", props.className)}
+            className="checkbox"
         />
     );
 }

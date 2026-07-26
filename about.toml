@@ -15,6 +15,7 @@ accepted = [
 ignore-build-dependencies = false
 ignore-dev-dependencies = false
 ignore-transitive-dependencies = false
+filter-noassertion = true
 
 workarounds = [
     "cocoa",
@@ -35,11 +36,4 @@ accepted = ["CDLA-Permissive-2.0"]
 
 # foldhash is solely Zlib-licensed (other Zlib-OR crates satisfied by MIT)
 [foldhash]
-accepted = ["Zlib"]
-
-# The SDL3 bindings and the vendored SDL library are solely Zlib-licensed
-[sdl3-sys]
-accepted = ["Zlib"]
-
-[sdl3-src]
 accepted = ["Zlib"]

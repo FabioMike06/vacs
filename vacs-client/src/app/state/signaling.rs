@@ -3,7 +3,7 @@ use crate::app::state::webrtc::{AppStateWebrtcExt, UnansweredCallGuard};
 use crate::app::state::{AppState, AppStateInner, sealed};
 use crate::audio::manager::AudioManagerHandle;
 use crate::audio::source_type::SourceType;
-use crate::config::BackendEndpoint;
+use crate::config::{BackendEndpoint, WS_LOGIN_TIMEOUT};
 use crate::error::{Error, FrontendError};
 use crate::signaling::auth::TauriTokenProvider;
 use serde::Serialize;
@@ -27,7 +27,6 @@ use vacs_signaling::protocol::ws::{client, server, shared};
 use vacs_signaling::transport::tokio::TokioTransport;
 
 const INCOMING_CALLS_LIMIT: usize = 5;
-const WS_LOGIN_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -417,8 +416,8 @@ impl AppStateInner {
             } => {
                 log::debug!(
                     "Successfully connected to signaling server. Display name: {}, frequency: {}, profile: {profile}",
-                    client_info.display_name,
-                    client_info.frequency,
+                    &client_info.display_name,
+                    &client_info.frequency,
                 );
 
                 let session_info = server::SessionInfo {
@@ -781,8 +780,8 @@ impl AppStateInner {
             ServerMessage::SessionInfo(session_info) => {
                 log::trace!(
                     "Received session info for client {:?}: {}",
-                    session_info.client,
-                    session_info.profile
+                    &session_info.client,
+                    &session_info.profile
                 );
 
                 if let SessionProfile::Changed(ref active_profile) = session_info.profile {

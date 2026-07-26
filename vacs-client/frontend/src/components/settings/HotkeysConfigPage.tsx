@@ -1,20 +1,20 @@
 import KeyCapture from "./KeyCapture.tsx";
-import {InputBinding, inputToLabel} from "../../types/transmit.ts";
+import {codeToLabel} from "../../types/transmit.ts";
 import {useEffect, useState} from "preact/hooks";
 import {KeybindsConfig, KeybindType} from "../../types/keybinds.ts";
-import {invokeStrict} from "../../error.ts";
+import {invokeSafe, invokeStrict} from "../../error.ts";
 import {useCapabilitiesStore} from "../../stores/capabilities-store.ts";
+import {useAsyncDebounce} from "../../hooks/debounce-hook.ts";
+import {clsx} from "clsx";
 import SettingsSubPage from "./SettingsSubPage.tsx";
-import ExternalKeybindField from "./ExternalKeybindField.tsx";
-import KeybindPageActions from "./KeybindPageActions.tsx";
 
 type Keybind = {
-    input: InputBinding | null;
+    code: string | null;
     label: string | null;
 };
 
-async function inputToKeybind(input: InputBinding | null): Promise<Keybind> {
-    return {input, label: input && (await inputToLabel(input))};
+async function codeToKeybind(code: string | null): Promise<Keybind> {
+    return {code, label: code && (await codeToLabel(code))};
 }
 
 function HotkeysConfigPage() {
@@ -26,9 +26,9 @@ function HotkeysConfigPage() {
         const fetchConfig = async () => {
             try {
                 const config = await invokeStrict<KeybindsConfig>("keybinds_get_keybinds_config");
-                setAcceptCall(await inputToKeybind(config.acceptCall));
-                setEndCall(await inputToKeybind(config.endCall));
-                setToggleRadioPrio(await inputToKeybind(config.toggleRadioPrio));
+                setAcceptCall(await codeToKeybind(config.acceptCall));
+                setEndCall(await codeToKeybind(config.endCall));
+                setToggleRadioPrio(await codeToKeybind(config.toggleRadioPrio));
             } catch {}
         };
 
@@ -36,12 +36,7 @@ function HotkeysConfigPage() {
     }, []);
 
     return (
-        <SettingsSubPage
-            title="Hotkeys Config"
-            width="w-1/2"
-            actions={<KeybindPageActions />}
-            className="py-3 px-4"
-        >
+        <SettingsSubPage title="Hotkeys Config" width="w-1/2" className="py-3 px-4">
             <div className="grid grid-cols-[auto_1fr] gap-4 items-center">
                 <KeybindField
                     type="AcceptCall"
@@ -76,10 +71,10 @@ type KeybindFieldProps = {
 function KeybindField({type, label, keybind, setKeybind}: KeybindFieldProps) {
     const hasExternal = useCapabilitiesStore(state => state.platform === "LinuxWayland");
 
-    const handleOnCapture = async (input: InputBinding | null) => {
+    const handleOnCapture = async (code: string | null) => {
         try {
-            await invokeStrict("keybinds_set_binding", {keybind: type, input});
-            setKeybind(await inputToKeybind(input));
+            await invokeStrict("keybinds_set_binding", {keybind: type, code});
+            setKeybind(await codeToKeybind(code));
         } catch {}
     };
 
@@ -87,13 +82,7 @@ function KeybindField({type, label, keybind, setKeybind}: KeybindFieldProps) {
         <>
             <p>{label}</p>
             {hasExternal ? (
-                <ExternalKeybindField
-                    type={type}
-                    binding={keybind?.input ?? null}
-                    bindingLabel={keybind?.label ?? null}
-                    onCapture={handleOnCapture}
-                    onRemove={() => handleOnCapture(null)}
-                />
+                <ExternalKeybindField type={type} />
             ) : keybind !== undefined ? (
                 <KeyCapture
                     label={keybind.label}
@@ -104,6 +93,41 @@ function KeybindField({type, label, keybind, setKeybind}: KeybindFieldProps) {
                 <p>Loading...</p>
             )}
         </>
+    );
+}
+
+function ExternalKeybindField({type}: {type: KeybindType}) {
+    const [binding, setBinding] = useState<string | null | undefined>(undefined);
+
+    const handleOpenSystemShortcutsOnClick = useAsyncDebounce(async () => {
+        await invokeSafe("keybinds_open_system_shortcuts_settings");
+    });
+
+    useEffect(() => {
+        const fetchExternalBinding = async () => {
+            try {
+                const binding = await invokeStrict<string | null>("keybinds_get_external_binding", {
+                    keybind: type,
+                });
+                setBinding(binding);
+            } catch {}
+        };
+
+        void fetchExternalBinding();
+    }, [type]);
+
+    return (
+        <div
+            onClick={handleOpenSystemShortcutsOnClick}
+            title="On Wayland, shortcuts are managed by the system. Please configure the shortcut in your desktop environment settings. Click this field to try opening the appropriate system settings."
+            className={clsx(
+                "w-full h-full min-w-10 min-h-8 grow text-sm py-1 px-2 rounded text-center flex items-center justify-center",
+                "bg-gray-300 border-2 border-t-gray-100 border-l-gray-100 border-r-gray-700 border-b-gray-700",
+                "brightness-90 cursor-help",
+            )}
+        >
+            <p className="truncate max-w-full">{binding || "Not bound"}</p>
+        </div>
     );
 }
 

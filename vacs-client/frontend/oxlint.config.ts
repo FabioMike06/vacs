@@ -32,7 +32,6 @@ export default defineConfig({
         "no-unnecessary-type-arguments": "off",
         "no-shadow": "off",
         "typescript/consistent-return": "off",
-        "vitest/expect-expect": "off",
     },
     options: {
         typeAware: true,

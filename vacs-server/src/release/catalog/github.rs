@@ -7,7 +7,7 @@ use lru::LruCache;
 use octocrab::Octocrab;
 use octocrab::models::repos::{Asset as OctocrabAsset, Release as OctocrabRelease};
 use parking_lot::RwLock;
-use regex::{Regex, regex};
+use regex::Regex;
 use reqwest::header;
 use semver::Version;
 use std::collections::HashMap;
@@ -25,12 +25,29 @@ const MAX_PAGINATION_PAGES: usize = 10; // Max 1000 releases (100 per page)
 const SIGNATURE_CACHE_SIZE: usize = 100; // LRU cache size for signatures
 const FETCH_SIGNATURES_CONCURRENT_REQUESTS: usize = 5; // Number of asset signature downloads to fetch concurrently
 
-/// Matches release titles such as `vacs-client: v1.2.3`, capturing the version.
-///
-/// Shared by title validation and version parsing, so it lives behind a helper
-/// instead of being repeated at both call sites.
-fn title_pattern() -> &'static Regex {
-    regex!(r"^vacs(-client)?:?[ -]v(?P<version>\d+\.\d+\.\d+(?:[-+].*)?)$")
+struct RegexPatterns {
+    title: Regex,
+    semver: Regex,
+    ignored_assets: Regex,
+    rc_prerelease: Regex,
+    arch_x86_64: Regex,
+    arch_arm64: Regex,
+    arch_armv7: Regex,
+}
+
+impl Default for RegexPatterns {
+    fn default() -> Self {
+        Self {
+            title: Regex::new(r"^vacs(-client)?:?[ -]v(?P<version>\d+\.\d+\.\d+(?:[-+].*)?)$")
+                .unwrap(),
+            semver: Regex::new(r"v?(?P<version>\d+\.\d+\.\d+(?:[-+].*)?)").unwrap(),
+            ignored_assets: Regex::new(r"^SHA256SUMS|(?i)\.sig$").unwrap(),
+            rc_prerelease: Regex::new(r"(?i)^rc").unwrap(),
+            arch_x86_64: Regex::new(r"(?i)(x86_64|amd64|x64)").unwrap(),
+            arch_arm64: Regex::new(r"(?i)(aarch64|arm64)").unwrap(),
+            arch_armv7: Regex::new(r"(?i)(armv7)").unwrap(),
+        }
+    }
 }
 
 pub struct GitHubCatalog {
@@ -50,6 +67,8 @@ pub struct GitHubCatalog {
 
     signatures: RwLock<LruCache<String, (Instant, String)>>,
     signature_cache_ttl: Duration,
+
+    patterns: RegexPatterns,
 }
 
 impl GitHubCatalog {
@@ -115,6 +134,8 @@ impl GitHubCatalog {
                 NonZeroUsize::new(SIGNATURE_CACHE_SIZE).unwrap(),
             )),
             signature_cache_ttl,
+
+            patterns: RegexPatterns::default(),
         };
 
         catalog
@@ -329,7 +350,7 @@ impl GitHubCatalog {
             return None;
         }
 
-        if !title_pattern().is_match(release.name.as_ref()?) {
+        if !self.patterns.title.is_match(release.name.as_ref()?) {
             tracing::trace!("Ignoring release due to name mismatch");
             return None;
         }
@@ -372,7 +393,7 @@ impl GitHubCatalog {
 
     #[instrument(level = "trace", skip(self, asset), fields(asset_name = ?asset.name))]
     fn filter_map_release_asset(&self, asset: &OctocrabAsset) -> Option<ReleaseAsset> {
-        if regex!(r"^SHA256SUMS|(?i)\.sig$").is_match(asset.name.as_str()) {
+        if self.patterns.ignored_assets.is_match(asset.name.as_str()) {
             tracing::trace!("Ignoring release asset due to name mismatch");
             return None;
         }
@@ -392,13 +413,12 @@ impl GitHubCatalog {
     }
 
     fn parse_release_version(&self, title: &str, tag: &str) -> Option<Version> {
-        let semver = regex!(r"v?(?P<version>\d+\.\d+\.\d+(?:[-+].*)?)");
-
         Version::parse(
-            title_pattern()
+            self.patterns
+                .title
                 .captures(title)
-                .or_else(|| semver.captures(title))
-                .or_else(|| semver.captures(tag))?
+                .or_else(|| self.patterns.semver.captures(title))
+                .or_else(|| self.patterns.semver.captures(tag))?
                 .name("version")?
                 .as_str(),
         )
@@ -407,7 +427,7 @@ impl GitHubCatalog {
 
     fn derive_release_channel(&self, version: &Version, prerelease: bool) -> ReleaseChannel {
         if prerelease || !version.pre.is_empty() {
-            if regex!(r"(?i)^rc").is_match(version.pre.as_str()) {
+            if self.patterns.rc_prerelease.is_match(version.pre.as_str()) {
                 ReleaseChannel::Rc
             } else {
                 ReleaseChannel::Beta
@@ -428,11 +448,11 @@ impl GitHubCatalog {
     }
 
     fn derive_release_asset_arch(&self, asset_name: &str) -> Option<&str> {
-        if regex!(r"(?i)(x86_64|amd64|x64)").is_match(asset_name) {
+        if self.patterns.arch_x86_64.is_match(asset_name) {
             Some("x86_64")
-        } else if regex!(r"(?i)(aarch64|arm64)").is_match(asset_name) {
+        } else if self.patterns.arch_arm64.is_match(asset_name) {
             Some("aarch64")
-        } else if regex!(r"(?i)(armv7)").is_match(asset_name) {
+        } else if self.patterns.arch_armv7.is_match(asset_name) {
             Some("armv7")
         } else {
             None

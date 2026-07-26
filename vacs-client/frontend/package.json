@@ -1,7 +1,7 @@
 {
   "name": "vacs-client",
   "private": true,
-  "version": "2.5.0",
+  "version": "2.4.0",
   "license": "(MIT OR Apache-2.0)",
   "repository": "https://github.com/vacs-project/vacs",
   "type": "module",
@@ -19,14 +19,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@preact/signals": "^2.9.3",
-    "@tailwindcss/vite": "^4.3.2",
-    "@tauri-apps/api": "^2.11.1",
+    "@preact/signals": "^2.9.1",
+    "@tailwindcss/vite": "^4.3.0",
+    "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-deep-link": "^2.4.8",
     "@tauri-apps/plugin-log": "^2.8.0",
     "@tauri-apps/plugin-opener": "^2",
     "clsx": "^2.1.1",
-    "preact": "^10.29.7",
+    "preact": "^10.29.2",
     "react": "npm:@preact/compat@^18.3.1",
     "react-dom": "npm:@preact/compat@^18.3.1",
     "tailwindcss": "^4.3.0",
@@ -35,12 +35,12 @@
   "devDependencies": {
     "@preact/preset-vite": "^2.10.5",
     "@testing-library/preact": "^3.2.4",
-    "@vitest/coverage-v8": "^4.1.10",
+    "@vitest/coverage-v8": "^4.1.8",
     "jsdom": "^29.1.1",
-    "oxlint": "^1.73.0",
-    "oxlint-tsgolint": "^0.24.0",
+    "oxlint": "^1.68.0",
+    "oxlint-tsgolint": "^0.23.0",
     "typescript": "~6.0.3",
-    "vite": "^8.1.4",
+    "vite": "^8.0.16",
     "vitest": "^4.1.8"
   }
 }

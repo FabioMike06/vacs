@@ -7,8 +7,11 @@ export async function ensureTauri() {
     if (tauriInvoke && tauriListen) return;
     const tauriCore = await import("@tauri-apps/api/core");
     const tauriEvent = await import("@tauri-apps/api/event");
-    tauriInvoke = tauriCore.invoke;
-    tauriListen = tauriEvent.listen;
+    tauriInvoke = tauriCore.invoke as typeof tauriInvoke;
+    tauriListen = tauriEvent.listen as <T>(
+        event: RemoteEvent,
+        cb: EventCallback<T>,
+    ) => Promise<UnlistenFn>;
 }
 
 export function getTauriInvoke() {

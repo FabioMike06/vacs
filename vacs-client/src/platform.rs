@@ -16,7 +16,6 @@ pub struct Capabilities {
     pub always_on_top: bool,
     pub keybind_listener: bool,
     pub keybind_emitter: bool,
-    pub joystick: bool,
     pub playback: bool,
 
     pub platform: Platform,
@@ -24,7 +23,6 @@ pub struct Capabilities {
 
 static CAPABILITIES_CACHE: OnceLock<Capabilities> = OnceLock::new();
 
-#[allow(dead_code)]
 impl Capabilities {
     pub fn get() -> &'static Self {
         CAPABILITIES_CACHE.get_or_init(Self::detect)
@@ -59,10 +57,6 @@ impl Capabilities {
             always_on_top: !matches!(platform, Platform::LinuxWayland),
             keybind_listener,
             keybind_emitter: matches!(platform, Platform::Windows | Platform::MacOs),
-            // SDL's joystick subsystem needs no display server or special
-            // permissions on any supported platform; runtime failures surface
-            // (and are logged) when the joystick service is first used.
-            joystick: !matches!(platform, Platform::Unknown),
             playback,
             platform,
         }
@@ -76,7 +70,6 @@ impl Default for Capabilities {
 }
 
 #[cfg(target_os = "linux")]
-#[allow(dead_code)]
 fn check_wayland_global_shortcuts_portal() -> bool {
     log::debug!("Checking availability of Wayland Global Shortcuts portal");
 
@@ -108,7 +101,6 @@ fn check_wayland_global_shortcuts_portal() -> bool {
 }
 
 #[cfg(target_os = "linux")]
-#[allow(dead_code)]
 fn check_pipewire() -> bool {
     let socket_path = std::env::var("PIPEWIRE_RUNTIME_DIR")
         .ok()
@@ -138,10 +130,10 @@ fn check_pipewire() -> bool {
             std::time::Duration::from_secs(1),
             tokio::task::spawn_blocking(|| {
                 pipewire::init();
-                let Ok(mainloop) = pipewire::main_loop::MainLoopBox::new(None) else {
+                let Ok(mainloop) = pipewire::main_loop::MainLoop::new(None) else {
                     return false;
                 };
-                let Ok(context) = pipewire::context::ContextBox::new(mainloop.loop_(), None) else {
+                let Ok(context) = pipewire::context::Context::new(&mainloop) else {
                     return false;
                 };
                 context.connect(None).is_ok()
@@ -153,7 +145,7 @@ fn check_pipewire() -> bool {
                 if connected {
                     log::debug!("PipeWire is available");
                 } else {
-                    log::warn!("PipeWire daemon probe failed");
+                    log::warn!("PipeWire daemon probe failed")
                 }
                 connected
             }
@@ -162,7 +154,7 @@ fn check_pipewire() -> bool {
                 false
             }
             Err(_) => {
-                log::warn!("PipeWire check timed out");
+                log::warn!("PipeWire check taimed out");
                 false
             }
         }
@@ -267,7 +259,6 @@ impl Platform {
         )
     }
 
-    #[allow(dead_code)]
     pub const fn as_str(&self) -> &'static str {
         match self {
             Platform::Windows => "Windows",

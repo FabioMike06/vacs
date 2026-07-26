@@ -16,7 +16,6 @@ function RemoteControlSettings() {
     const [config, setConfig] = useState<RemoteConfig>({
         enabled: false,
         listenAddr: DEFAULT_ADDRESS,
-        serveFrontend: true,
     });
     const [listenAddr, setListenAddr] = useState<string>("");
     const [addrError, setAddrError] = useState(false);

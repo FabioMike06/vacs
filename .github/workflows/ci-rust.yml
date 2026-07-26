@@ -21,12 +21,12 @@ jobs:
     continue-on-error: ${{ matrix.checks == 'advisories' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
 
       - name: cargo deny
-        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        uses: EmbarkStudios/cargo-deny-action@bb137d7af7e4fb67e5f82a49c4fce4fad40782fe # v2.0.20
         with:
           arguments: --all-features
           command: check ${{ matrix.checks }}
@@ -42,7 +42,7 @@ jobs:
     continue-on-error: true
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
 
@@ -59,7 +59,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
 
@@ -80,7 +80,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
 
@@ -98,12 +98,6 @@ jobs:
 
       - name: Tests
         run: cargo test --locked --workspace --all-targets --all-features
-
-      # The joystick service roundtrip drives SDL's event loop with a virtual
-      # device and is #[ignore]d to keep regular test runs hermetic; execute it
-      # explicitly (no hardware or display required).
-      - name: Joystick service end-to-end tests
-        run: cargo test --locked -p vacs-client --all-features virtual_joystick -- --include-ignored
 
       - name: Summary
         run: echo "### ✅ Tests - all workspace tests passed" >> $GITHUB_STEP_SUMMARY
@@ -130,7 +124,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
 
@@ -143,10 +137,6 @@ jobs:
         run: |
           brew update
           brew install opus
-
-      - name: Install build dependencies (Windows)
-        if: matrix.platform == 'windows-latest'
-        uses: ./.github/actions/install-windows-deps
 
       - name: Rust toolchain
         run: |

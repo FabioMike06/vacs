@@ -1,8 +1,8 @@
 use crate::app::state::AppState;
 use crate::app::state::http::HttpState;
 use crate::app::state::signaling::ConnectionState;
-use crate::app::{ClockMode, FrontendCallConfig, FrontendClientPageSettings};
 use crate::audio::manager::AudioManagerHandle;
+use crate::config::{ClockMode, FrontendCallConfig, FrontendClientPageSettings};
 use crate::error::Error;
 use crate::keybinds::engine::KeybindEngineHandle;
 use crate::platform::Capabilities;
@@ -12,7 +12,6 @@ use crate::playback::commands::{
     playback_stop,
 };
 use crate::playback::recorder::PlaybackRecorderHandle;
-use crate::radio::RadioHandle;
 use crate::remote::RemoteStatus;
 use crate::remote::commands::FrontendRemoteConfigWithStatus;
 use crate::remote::protocol::{
@@ -166,7 +165,7 @@ pub async fn start_server(
         client_count,
     };
 
-    let forwarder_ids = register_event_forwarders(&app_handle, &event_tx);
+    register_event_forwarders(&app_handle, &event_tx);
 
     let mut router = Router::new().route("/ws", get(ws_handler));
 
@@ -178,29 +177,16 @@ pub async fn start_server(
 
     log::info!("Remote control server listening on http://{listen_addr}");
 
-    let result = async {
-        let listener = tokio::net::TcpListener::bind(listen_addr).await?;
-        axum::serve(
-            listener,
-            app.into_make_service_with_connect_info::<SocketAddr>(),
-        )
-        .with_graceful_shutdown(shutdown.cancelled_owned())
-        .await?;
-        anyhow::Ok(())
-    }
-    .await;
+    let listener = tokio::net::TcpListener::bind(listen_addr).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown.cancelled_owned())
+    .await?;
 
-    // The forwarders must not outlive the server: they are registered globally
-    // on the app, so leaving them behind would pile up another full set of
-    // listeners on every server restart.
-    for id in forwarder_ids {
-        app_handle.unlisten(id);
-    }
-
-    if result.is_ok() {
-        log::info!("Remote control server stopped");
-    }
-    result
+    log::info!("Remote control server stopped");
+    Ok(())
 }
 
 async fn serve_embedded_asset(State(state): State<RemoteServerState>, uri: Uri) -> Response {
@@ -223,27 +209,21 @@ async fn serve_embedded_asset(State(state): State<RemoteServerState>, uri: Uri) 
         .unwrap_or_else(|| StatusCode::NOT_FOUND.into_response())
 }
 
-fn register_event_forwarders(
-    app: &AppHandle,
-    event_tx: &broadcast::Sender<ServerMessage>,
-) -> Vec<tauri::EventId> {
-    RemoteEvent::ALL
-        .iter()
-        .map(|&remote_event| {
-            let tx = event_tx.clone();
-            app.listen(remote_event.as_str(), move |event| {
-                let payload = serde_json::from_str(event.payload())
-                    .unwrap_or(serde_json::Value::String(event.payload().to_string()));
-                let msg = ServerMessage::Event {
-                    name: remote_event,
-                    payload,
-                };
-                if tx.receiver_count() > 0 {
-                    let _ = tx.send(msg);
-                }
-            })
-        })
-        .collect()
+fn register_event_forwarders(app: &AppHandle, event_tx: &broadcast::Sender<ServerMessage>) {
+    for &remote_event in RemoteEvent::ALL {
+        let tx = event_tx.clone();
+        app.listen(remote_event.as_str(), move |event| {
+            let payload = serde_json::from_str(event.payload())
+                .unwrap_or(serde_json::Value::String(event.payload().to_string()));
+            let msg = ServerMessage::Event {
+                name: remote_event,
+                payload,
+            };
+            if tx.receiver_count() > 0 {
+                let _ = tx.send(msg);
+            }
+        });
+    }
 }
 
 async fn ws_handler(
@@ -304,27 +284,9 @@ async fn handle_ws_connection(socket: WebSocket, state: RemoteServerState, peer:
     while let Some(Ok(msg)) = ws_rx.next().await {
         match msg {
             Message::Text(text) => {
-                let client_msg = match serde_json::from_str::<ClientMessage>(&text) {
-                    Ok(msg) => msg,
-                    Err(err) => {
-                        log::warn!(
-                            "[{peer}] Failed to parse remote client message ({err}): {text}"
-                        );
-                        // If this was an invoke, settle the client's pending request
-                        // with an error instead of leaving its promise hanging forever.
-                        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text)
-                            && value.get("type").and_then(serde_json::Value::as_str)
-                                == Some("invoke")
-                            && let Some(id) = value.get("id").and_then(serde_json::Value::as_str)
-                        {
-                            let response = ServerMessage::err(
-                                id.to_string(),
-                                ProblemDetails::invalid_message(),
-                            );
-                            let _ = client_tx.send(response).await;
-                        }
-                        continue;
-                    }
+                let Ok(client_msg) = serde_json::from_str::<ClientMessage>(&text) else {
+                    log::warn!("[{peer}] Failed to parse remote client message: {text}");
+                    continue;
                 };
 
                 match client_msg {
@@ -495,15 +457,6 @@ async fn dispatch_command(
             let app_state = app.state::<AppState>();
             dispatch(app_set_clock_mode(app.clone(), app_state, clock_mode).await)
         }
-        AppGetCplMode => {
-            let app_state = app.state::<AppState>();
-            dispatch(app_get_cpl_mode(app_state).await)
-        }
-        AppSetCplMode => {
-            let cpl_mode = args!(args, "cplMode");
-            let app_state = app.state::<AppState>();
-            dispatch(app_set_cpl_mode(app.clone(), app_state, cpl_mode).await)
-        }
 
         AudioGetHosts => {
             let app_state = app.state::<AppState>();
@@ -600,52 +553,38 @@ async fn dispatch_command(
             dispatch(keybinds_get_keybinds_config(app_state).await)
         }
         KeybindsSetBinding => {
-            let (input, keybind) = args!(args, "input", "keybind");
+            let (code, keybind) = args!(args, "code", "keybind");
             let app_state = app.state::<AppState>();
             let keybind_engine = app.state::<KeybindEngineHandle>();
             dispatch(
-                keybinds_set_binding(app.clone(), app_state, keybind_engine, input, keybind).await,
+                keybinds_set_binding(app.clone(), app_state, keybind_engine, code, keybind).await,
             )
         }
-        KeybindsCaptureJoystickButton => {
-            let capture_id = args!(args, "captureId");
+        KeybindsGetRadioConfig => {
             let app_state = app.state::<AppState>();
-            let capture_state = app.state::<crate::keybinds::commands::JoystickCaptureState>();
-            let joystick = app.state::<crate::keybinds::joystick::JoystickServiceHandle>();
+            dispatch(keybinds_get_radio_config(app_state).await)
+        }
+        KeybindsSetRadioConfig => {
+            let radio_config = args!(args, "radioConfig");
+            let app_state = app.state::<AppState>();
+            let keybind_engine = app.state::<KeybindEngineHandle>();
             dispatch(
-                keybinds_capture_joystick_button(
-                    app_state,
-                    capture_state,
-                    joystick,
-                    capture_id,
-                    None,
-                )
-                .await,
+                keybinds_set_radio_config(app.clone(), app_state, keybind_engine, radio_config)
+                    .await,
             )
         }
-        KeybindsCancelJoystickCapture => {
-            let capture_id = args!(args, "captureId");
-            let capture_state = app.state::<crate::keybinds::commands::JoystickCaptureState>();
-            dispatch(keybinds_cancel_joystick_capture(capture_state, capture_id).await)
-        }
-        KeybindsListJoystickDevices => {
-            let app_state = app.state::<AppState>();
-            let joystick = app.state::<crate::keybinds::joystick::JoystickServiceHandle>();
-            dispatch(keybinds_list_joystick_devices(app_state, joystick).await)
-        }
-        KeybindsSetIgnoredJoysticks => {
-            let devices = args!(args, "devices");
-            let app_state = app.state::<AppState>();
-            dispatch(keybinds_set_ignored_joysticks(app.clone(), app_state, devices).await)
+        KeybindsGetRadioState => {
+            let keybind_engine = app.state::<KeybindEngineHandle>();
+            dispatch(keybinds_get_radio_state(keybind_engine).await)
         }
         KeybindsGetExternalBinding => {
             let keybind = args!(args, "keybind");
             let keybind_engine = app.state::<KeybindEngineHandle>();
             dispatch(keybinds_get_external_binding(keybind_engine, keybind).await)
         }
-        KeybindsIsPortalShortcutBound => {
-            let keybind = args!(args, "keybind");
-            dispatch(keybinds_is_portal_shortcut_bound(keybind).await)
+        KeybindsReconnectRadio => {
+            let keybind_engine = app.state::<KeybindEngineHandle>();
+            dispatch(keybinds_reconnect_radio(keybind_engine).await)
         }
 
         PlaybackGetEnabled => {
@@ -711,52 +650,21 @@ async fn dispatch_command(
 
         RadioAddStation => {
             let callsign = args!(args, "callsign");
-            let radio = app.state::<RadioHandle>();
-            dispatch(radio_add_station(radio, callsign).await)
+            let keybind_engine = app.state::<KeybindEngineHandle>();
+            dispatch(radio_add_station(keybind_engine, callsign).await)
         }
         RadioFastCouple => {
-            let radio = app.state::<RadioHandle>();
-            dispatch(radio_fast_couple(radio).await)
-        }
-
-        RadioGetConfig => {
-            let app_state = app.state::<AppState>();
-            dispatch(radio_get_config(app_state).await)
-        }
-        RadioReconnect => {
-            let radio = app.state::<RadioHandle>();
-            dispatch(radio_reconnect(radio).await)
-        }
-        RadioSetConfig => {
-            let radio_config = args!(args, "radioConfig");
-            let app_state = app.state::<AppState>();
-            let radio = app.state::<RadioHandle>();
             let keybind_engine = app.state::<KeybindEngineHandle>();
-            let recorder = app.state::<PlaybackRecorderHandle>();
-            dispatch(
-                radio_set_config(
-                    app.clone(),
-                    app_state,
-                    keybind_engine,
-                    radio,
-                    recorder,
-                    radio_config,
-                )
-                .await,
-            )
+            dispatch(radio_fast_couple(keybind_engine).await)
         }
         RadioSetStationState => {
             let (frequency, update) = args!(args, "frequency", "update");
-            let radio = app.state::<RadioHandle>();
-            dispatch(radio_set_station_state(radio, frequency, update).await)
+            let keybind_engine = app.state::<KeybindEngineHandle>();
+            dispatch(radio_set_station_state(keybind_engine, frequency, update).await)
         }
         RadioGetStations => {
-            let radio = app.state::<RadioHandle>();
-            dispatch(radio_get_stations(radio).await)
-        }
-        RadioGetState => {
-            let radio = app.state::<RadioHandle>();
-            dispatch(radio_get_state(radio).await)
+            let keybind_engine = app.state::<KeybindEngineHandle>();
+            dispatch(radio_get_stations(keybind_engine).await)
         }
 
         SignalingConnect => {
@@ -830,11 +738,6 @@ async fn dispatch_command(
         RemoteRequestStoreSync => {
             app.emit("store:sync:request", ()).ok();
             DispatchResult::Ok(serde_json::Value::Null)
-        }
-
-        RemoteIsEnabled => {
-            let app_state = app.state::<AppState>();
-            dispatch(crate::remote::commands::remote_is_enabled(app_state).await)
         }
 
         RemoteGetConfig => {

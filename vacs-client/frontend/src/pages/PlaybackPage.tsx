@@ -21,7 +21,11 @@ function PlaybackPage() {
     const capPlayback = useCapabilitiesStore(state => state.playback);
     const capPlatform = useCapabilitiesStore(state => state.platform);
 
-    const radioEnabled = useSettingsStore(state => state.radioConfig?.integration != null);
+    const trackAudioRadioEnabled = useSettingsStore(
+        state =>
+            state.transmitConfig?.mode === "RadioIntegration" &&
+            state.radioConfig?.integration === "TrackAudio",
+    );
 
     const playbackEnabled = useSettingsStore(state => state.playbackEnabled);
 
@@ -43,7 +47,7 @@ function PlaybackPage() {
                 <div className="w-full grow rounded-b-sm bg-[#B5BBC6] flex justify-center items-center text-slate-600">
                     Radio playback is not yet supported on {capPlatform}.
                 </div>
-            ) : !radioEnabled ? (
+            ) : !trackAudioRadioEnabled ? (
                 <div className="w-full grow rounded-b-sm bg-[#B5BBC6] flex flex-col justify-center items-center text-slate-600">
                     <p>TrackAudio radio integration is not enabled.</p>
                     <p>
@@ -79,7 +83,7 @@ function PlaybackPage() {
                 </div>
             ) : !radioConnected ? (
                 <div className="w-full grow rounded-b-sm bg-[#B5BBC6] flex flex-col justify-center items-center text-slate-600">
-                    <p>No radio connection.</p>
+                    <p>No TrackAudio connection.</p>
                 </div>
             ) : (
                 <PlaybackPageInner />

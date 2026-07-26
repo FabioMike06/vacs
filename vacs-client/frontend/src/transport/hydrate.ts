@@ -12,7 +12,6 @@ import {useStationsStore} from "../stores/stations-store.ts";
 import {useSettingsStore} from "../stores/settings-store.ts";
 import {useCapabilitiesStore} from "../stores/capabilities-store.ts";
 import {useProfileStore} from "../stores/profile-store.ts";
-import {withSyncSuppressed} from "./store-sync.ts";
 
 export type SessionStateSnapshot = {
     connectionState: ConnectionState;
@@ -29,15 +28,6 @@ export type SessionStateSnapshot = {
 };
 
 export function hydrateStores(snapshot: SessionStateSnapshot) {
-    // Suppress sync re-broadcast: the snapshot's values came from the desktop,
-    // but at this point our stores still hold local defaults for everything the
-    // snapshot doesn't cover (transmitConfig, playbackEnabled, ...). Echoing a
-    // partially-default state back would clobber the desktop's stores.
-    withSyncSuppressed(() => applySnapshot(snapshot));
-    console.log("[remote] Stores hydrated from session state snapshot");
-}
-
-function applySnapshot(snapshot: SessionStateSnapshot) {
     const {setConnectionInfo, setConnectionState} = useConnectionStore.getState();
     const {setAuthenticated, setUnauthenticated} = useAuthStore.getState();
     const {setClients} = useClientsStore.getState();
@@ -80,4 +70,6 @@ function applySnapshot(snapshot: SessionStateSnapshot) {
     if (snapshot.outgoingCall) {
         callActions.setOutgoingCall(snapshot.outgoingCall);
     }
+
+    console.log("[remote] Stores hydrated from session state snapshot");
 }

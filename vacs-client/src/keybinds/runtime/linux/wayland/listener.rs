@@ -50,7 +50,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::async_runtime::JoinHandle;
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 
@@ -65,12 +65,13 @@ pub struct WaylandKeybindListener {
 }
 
 impl KeybindListener for WaylandKeybindListener {
-    async fn start(key_event_tx: UnboundedSender<KeyEvent>) -> Result<Self, KeybindsError>
+    async fn start() -> Result<(Self, UnboundedReceiver<KeyEvent>), KeybindsError>
     where
         Self: Sized,
     {
         log::debug!("Starting Wayland keybind listener");
 
+        let (key_event_tx, key_event_rx) = unbounded_channel::<KeyEvent>();
         let (startup_tx, startup_rx) = oneshot::channel::<Result<(), KeybindsError>>();
 
         let cancellation_token = CancellationToken::new();
@@ -102,12 +103,15 @@ impl KeybindListener for WaylandKeybindListener {
             Ok(Ok(Ok(()))) => {
                 log::debug!("Wayland keybind listener started successfully");
 
-                Ok(Self {
-                    cancellation_token,
-                    cleanup_token,
-                    task_handle: Some(task_handle),
-                    shortcuts,
-                })
+                Ok((
+                    Self {
+                        cancellation_token,
+                        cleanup_token,
+                        task_handle: Some(task_handle),
+                        shortcuts,
+                    },
+                    key_event_rx,
+                ))
             }
             Ok(Ok(Err(err))) => {
                 log::error!("Wayland keybind listener startup failed: {err}");
@@ -228,7 +232,7 @@ async fn setup_shortcuts_listener(
     res
 }
 
-pub(super) async fn initialize_portal(
+async fn initialize_portal(
     startup_tx: &mut Option<oneshot::Sender<Result<(), KeybindsError>>>,
 ) -> ashpd::Result<(GlobalShortcuts, ashpd::desktop::Session<GlobalShortcuts>)> {
     let proxy = match tokio::time::timeout(Duration::from_secs(5), GlobalShortcuts::new()).await {
@@ -283,7 +287,7 @@ pub(super) async fn initialize_portal(
     Ok((proxy, session))
 }
 
-pub(super) async fn check_existing_shortcuts(
+async fn check_existing_shortcuts(
     proxy: &GlobalShortcuts,
     session: &ashpd::desktop::Session<GlobalShortcuts>,
     startup_tx: &mut Option<oneshot::Sender<Result<(), KeybindsError>>>,
@@ -422,11 +426,11 @@ async fn run_shortcuts_listener(
                 if let Ok(shortcut_id) = PortalShortcutId::try_from(shortcut_id) {
                     log::trace!("Shortcut activated: {shortcut_id:?}");
 
-                    let _ = key_event_tx.send(KeyEvent::portal(
-                        shortcut_id.into(),
-                        shortcut_id.as_str().to_string(),
-                        KeyState::Down,
-                    ));
+                    let _ = key_event_tx.send(KeyEvent {
+                        code: shortcut_id.into(),
+                        label: shortcut_id.as_str().to_string(),
+                        state: KeyState::Down
+                    });
                 } else {
                     log::warn!("Unknown shortcut activated: {shortcut_id}");
                 }
@@ -437,11 +441,11 @@ async fn run_shortcuts_listener(
                 if let Ok(shortcut_id) = PortalShortcutId::try_from(shortcut_id) {
                     log::trace!("Shortcut deactivated: {shortcut_id:?}");
 
-                    let _ = key_event_tx.send(KeyEvent::portal(
-                        shortcut_id.into(),
-                        shortcut_id.as_str().to_string(),
-                        KeyState::Up,
-                    ));
+                    let _ = key_event_tx.send(KeyEvent {
+                        code: shortcut_id.into(),
+                        label: shortcut_id.as_str().to_string(),
+                        state: KeyState::Up
+                    });
                 } else {
                     log::warn!("Unknown shortcut deactivated: {shortcut_id}");
                 }

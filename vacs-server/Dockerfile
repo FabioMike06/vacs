@@ -1,4 +1,4 @@
-FROM rust:1.96.1-trixie AS chef
+FROM rust:1.96.0-trixie AS chef
 
 WORKDIR /usr/src/vacs
 RUN cargo install cargo-chef --locked
@@ -19,7 +19,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry \
     --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git \
     cargo build --release --bin vacs-server
 
-FROM debian:13.6-slim AS runtime
+FROM debian:13.5-slim AS runtime
 
 LABEL org.opencontainers.image.title="vacs-server" \
       org.opencontainers.image.description="VATSIM ATC Comm System - Signaling Server" \

@@ -60,16 +60,16 @@ impl StreamDevice {
         &self,
         data_callback: D,
         error_callback: E,
-    ) -> Result<cpal::Stream, cpal::Error>
+    ) -> Result<cpal::Stream, cpal::BuildStreamError>
     where
         D: FnMut(&[f32], &cpal::InputCallbackInfo) + Send + 'static,
-        E: FnMut(cpal::Error) + Send + 'static,
+        E: FnMut(cpal::StreamError) + Send + 'static,
     {
         debug_assert!(matches!(self.device_type, DeviceType::Input));
 
         match self.sample_format {
             SampleFormat::F32 => self.device.build_input_stream::<f32, _, _>(
-                self.config,
+                &self.config,
                 data_callback,
                 error_callback,
                 None,
@@ -80,10 +80,11 @@ impl StreamDevice {
             SampleFormat::U16 => {
                 self.build_f32_input_stream::<u16, _, _>(data_callback, error_callback)
             }
-            other => Err(cpal::Error::with_message(
-                cpal::ErrorKind::Other,
-                format!("Unsupported input sample format: {other:?}"),
-            )),
+            other => Err(cpal::BuildStreamError::BackendSpecific {
+                err: cpal::BackendSpecificError {
+                    description: format!("Unsupported input sample format: {other:?}"),
+                },
+            }),
         }
     }
 
@@ -91,11 +92,11 @@ impl StreamDevice {
         &self,
         mut data_callback: D,
         error_callback: E,
-    ) -> Result<cpal::Stream, cpal::Error>
+    ) -> Result<cpal::Stream, cpal::BuildStreamError>
     where
         T: Sample<Float = f32> + cpal::SizedSample + 'static,
         D: FnMut(&[f32], &cpal::InputCallbackInfo) + Send + 'static,
-        E: FnMut(cpal::Error) + Send + 'static,
+        E: FnMut(cpal::StreamError) + Send + 'static,
     {
         let buf: RefCell<Vec<f32>> = RefCell::new(Vec::new());
         if let cpal::BufferSize::Fixed(n) = self.config.buffer_size {
@@ -103,7 +104,7 @@ impl StreamDevice {
         }
 
         self.device.build_input_stream::<T, _, _>(
-            self.config,
+            &self.config,
             move |input: &[T], info| {
                 let mut b = buf.borrow_mut();
                 if b.len() != input.len() {
@@ -124,16 +125,16 @@ impl StreamDevice {
         &self,
         data_callback: D,
         error_callback: E,
-    ) -> Result<cpal::Stream, cpal::Error>
+    ) -> Result<cpal::Stream, cpal::BuildStreamError>
     where
         D: FnMut(&mut [f32], &cpal::OutputCallbackInfo) + Send + 'static,
-        E: FnMut(cpal::Error) + Send + 'static,
+        E: FnMut(cpal::StreamError) + Send + 'static,
     {
         debug_assert!(matches!(self.device_type, DeviceType::Output));
 
         match self.sample_format {
             SampleFormat::F32 => self.device.build_output_stream::<f32, _, _>(
-                self.config,
+                &self.config,
                 data_callback,
                 error_callback,
                 None,
@@ -144,10 +145,11 @@ impl StreamDevice {
             SampleFormat::U16 => {
                 self.build_f32_output_stream::<u16, _, _>(data_callback, error_callback)
             }
-            other => Err(cpal::Error::with_message(
-                cpal::ErrorKind::Other,
-                format!("Unsupported output sample format: {other:?}"),
-            )),
+            other => Err(cpal::BuildStreamError::BackendSpecific {
+                err: cpal::BackendSpecificError {
+                    description: format!("Unsupported output sample format: {other:?}"),
+                },
+            }),
         }
     }
 
@@ -155,11 +157,11 @@ impl StreamDevice {
         &self,
         mut data_callback: D,
         error_callback: E,
-    ) -> Result<cpal::Stream, cpal::Error>
+    ) -> Result<cpal::Stream, cpal::BuildStreamError>
     where
         T: cpal::SizedSample + cpal::FromSample<f32> + 'static,
         D: FnMut(&mut [f32], &cpal::OutputCallbackInfo) + Send + 'static,
-        E: FnMut(cpal::Error) + Send + 'static,
+        E: FnMut(cpal::StreamError) + Send + 'static,
     {
         let buf: RefCell<Vec<f32>> = RefCell::new(Vec::new());
         if let cpal::BufferSize::Fixed(n) = self.config.buffer_size {
@@ -167,7 +169,7 @@ impl StreamDevice {
         }
 
         self.device.build_output_stream::<T, _, _>(
-            self.config,
+            &self.config,
             move |output: &mut [T], info| {
                 let mut b = buf.borrow_mut();
                 if b.len() != output.len() {
@@ -189,7 +191,7 @@ impl StreamDevice {
         } else {
             let resampler_params = SincInterpolationParameters {
                 sinc_len: 256,
-                f_cutoff: None,
+                f_cutoff: 0.95,
                 interpolation: SincInterpolationType::Cubic,
                 oversampling_factor: 256,
                 window: WindowFunction::BlackmanHarris2,
@@ -682,9 +684,8 @@ fn device_identifiers(device: &cpal::Device) -> Vec<String> {
             }
         }
         for line in desc.extended() {
-            let line = line.to_string();
-            if !ids.contains(&line) {
-                ids.push(line);
+            if !ids.contains(line) {
+                ids.push(line.clone());
             }
         }
     }

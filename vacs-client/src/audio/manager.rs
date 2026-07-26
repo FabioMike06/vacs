@@ -1,16 +1,17 @@
 use crate::app::state::AppState;
 use crate::app::state::signaling::AppStateSignalingExt;
 use crate::app::state::webrtc::AppStateWebrtcExt;
+use crate::audio::PlaybackDeviceType;
 use crate::audio::source_type::SourceType;
 use crate::audio::wav_source::WavLoopSource;
-use crate::audio::{AudioConfig, PlaybackDeviceType};
+use crate::config::AudioConfig;
 use crate::error::{Error, FrontendError};
 use parking_lot::RwLock;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::mpsc;
 use vacs_audio::EncodedAudioFrame;
@@ -24,8 +25,6 @@ use vacs_signaling::protocol::ws::shared;
 use vacs_signaling::protocol::ws::shared::CallErrorReason;
 
 const AUDIO_STREAM_ERROR_CHANNEL_SIZE: usize = 32;
-
-const RESTART_COOLDOWN: Duration = Duration::from_secs(2);
 
 type SourceMap = HashMap<SourceType, AudioSourceId>;
 
@@ -119,7 +118,7 @@ impl AudioManager {
             output_device,
             is_fallback,
             audio_config,
-            None,
+            false,
             PlaybackDeviceType::Output,
         )?;
 
@@ -135,7 +134,7 @@ impl AudioManager {
                 speaker_device,
                 is_fallback,
                 audio_config,
-                None,
+                false,
                 PlaybackDeviceType::Speaker,
             )?;
             (Some(speaker), speaker_source_ids)
@@ -165,7 +164,7 @@ impl AudioManager {
         app: AppHandle,
         audio_config: &AudioConfig,
         device_type: PlaybackDeviceType,
-        restarted_at: Option<Instant>,
+        restarting: bool,
     ) -> Result<(), Error> {
         if device_type == PlaybackDeviceType::Speaker && !audio_config.speaker_enabled {
             self.speaker = None;
@@ -195,7 +194,7 @@ impl AudioManager {
             output_device,
             is_fallback,
             audio_config,
-            restarted_at,
+            restarting,
             device_type,
         )?;
 
@@ -289,8 +288,7 @@ impl AudioManager {
         &mut self,
         app: AppHandle,
         audio_config: &AudioConfig,
-        emit: Arc<dyn Fn(InputLevel) + Send + Sync>,
-        restarted_at: Option<Instant>,
+        emit: Box<dyn Fn(InputLevel) + Send>,
     ) -> Result<(), Error> {
         let (device, _) = DeviceSelector::open(
             DeviceType::Input,
@@ -301,73 +299,22 @@ impl AudioManager {
 
         let (error_tx, mut error_rx) = mpsc::channel(AUDIO_STREAM_ERROR_CHANNEL_SIZE);
 
-        let audio_config_clone = audio_config.clone();
-        let emit_clone = emit.clone();
         tauri::async_runtime::spawn(async move {
             while let Some(err) = error_rx.recv().await {
-                let in_restart_cooldown =
-                    restarted_at.is_some_and(|t| t.elapsed() < RESTART_COOLDOWN);
+                app.state::<AudioManagerHandle>()
+                    .write()
+                    .detach_input_device();
 
-                if in_restart_cooldown {
-                    log::error!(
-                        "Restarting input level meter after failure errored again within {RESTART_COOLDOWN:?}, cannot recover: {:?}",
-                        err
-                    );
-
-                    app.state::<AudioManagerHandle>()
-                        .write()
-                        .detach_input_device();
-                    app.emit("audio:stop-input-level-meter", Value::Null).ok();
-
-                    app.emit::<FrontendError>("error", Error::AudioDevice(Box::from(AudioError::Other(
-                        anyhow::anyhow!("Audio input level meter failed to start irrecoverably, check your audio settings and reopen the settings page.")
-                    ))).into()).ok();
-                } else {
-                    let res = app
-                        .state::<AudioManagerHandle>()
-                        .write()
-                        .attach_input_level_meter(
-                            app.clone(),
-                            &audio_config_clone,
-                            emit_clone.clone(),
-                            Some(Instant::now()),
-                        );
-
-                    if let Err(err) = res {
-                        log::error!(
-                            "Failed to switch input level meter after failure: {:?}",
-                            err
-                        );
-
-                        app.state::<AudioManagerHandle>()
-                            .write()
-                            .detach_input_device();
-                        app.emit("audio:stop-input-level-meter", Value::Null).ok();
-
-                        app.emit::<FrontendError>("error", Error::AudioDevice(Box::from(AudioError::Other(
-                            anyhow::anyhow!("Audio input level meter failed to start irrecoverably, check your audio settings and reopen the settings page.")
-                        ))).into()).ok();
-
-                        return;
-                    } else {
-                        log::info!(
-                            "Successfully restarted input level meter after failure, continuing capture"
-                        );
-                    }
-
-                    app.emit::<FrontendError>(
-                        "error",
-                        FrontendError::from(Error::from(err)).non_critical(),
-                    )
+                app.emit("audio:stop-input-level-meter", Value::Null).ok();
+                app.emit::<FrontendError>("error", Error::from(err).into())
                     .ok();
-                }
             }
             log::debug!("Playback capture error receiver closed");
         });
 
         self.input = Some(CaptureStream::start_level_meter(
             device,
-            Box::new(move |level| emit(level)),
+            emit,
             audio_config.input_device_volume,
             audio_config.input_device_volume_amp,
             error_tx,
@@ -477,7 +424,7 @@ impl AudioManager {
             return Err(AudioError::Other(anyhow::anyhow!(
                 "Tried to attach call but a call was already attached"
             ))
-            .into());
+                .into());
         }
 
         self.output_source_ids.insert(
@@ -509,7 +456,7 @@ impl AudioManager {
         device: StreamDevice,
         is_fallback: bool,
         audio_config: &AudioConfig,
-        restarted_at: Option<Instant>,
+        restarting: bool,
         device_type: PlaybackDeviceType,
     ) -> Result<(PlaybackStream, SourceMap), Error> {
         if is_fallback {
@@ -530,12 +477,12 @@ impl AudioManager {
             while let Some(err) = error_rx.recv().await {
                 handle_playback_stream_error(
                     err,
-                    restarted_at,
+                    restarting,
                     &audio_config_clone,
                     device_type,
                     app.clone(),
                 )
-                .await;
+                    .await;
             }
             log::debug!("Playback stream error receiver closed");
         });
@@ -676,16 +623,14 @@ impl AudioManager {
 
 async fn handle_playback_stream_error(
     err: AudioError,
-    restarted_at: Option<Instant>,
+    restarting: bool,
     audio_config: &AudioConfig,
     device_type: PlaybackDeviceType,
     app: AppHandle,
 ) {
-    let in_restart_cooldown = restarted_at.is_some_and(|t| t.elapsed() < RESTART_COOLDOWN);
-
-    if in_restart_cooldown {
+    if restarting {
         log::error!(
-            "Restarting {device_type} device after failure errored again within {RESTART_COOLDOWN:?}, cannot recover: {:?}",
+            "Restarting {device_type} device after failure errored, cannot recover: {:?}",
             err
         );
         app.emit::<FrontendError>("error", Error::AudioDevice(Box::from(AudioError::Other(
@@ -721,12 +666,7 @@ async fn handle_playback_stream_error(
             let audio_manager = app.state::<AudioManagerHandle>();
             let mut audio_manager = audio_manager.write();
 
-            audio_manager.switch_playback_device(
-                app.clone(),
-                audio_config,
-                device_type,
-                Some(Instant::now()),
-            )
+            audio_manager.switch_playback_device(app.clone(), audio_config, device_type, true)
         };
 
         if let Err(err) = res {
@@ -750,6 +690,6 @@ async fn handle_playback_stream_error(
             "error",
             FrontendError::from(Error::from(err)).non_critical(),
         )
-        .ok();
+            .ok();
     }
 }
