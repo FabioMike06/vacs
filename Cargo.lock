@@ -583,7 +583,7 @@ dependencies = [
 [[package]]
 name = "axum-login"
 version = "0.18.0"
-source = "git+https://github.com/MorpheusXAUT/axum-login?rev=ce98c33e1fe6db4a11ece0afa307ba880ff033a5#ce98c33e1fe6db4a11ece0afa307ba880ff033a5"
+source = "git+https://github.com/maxcountryman/axum-login?rev=151c72d7a1b4646830f86b4332e6bd6e34d719a7#151c72d7a1b4646830f86b4332e6bd6e34d719a7"
 dependencies = [
  "axum",
  "form_urlencoded",
@@ -1407,8 +1407,9 @@ dependencies = [
 
 [[package]]
 name = "cpal"
-version = "0.18.1"
-source = "git+https://github.com/RustAudio/cpal?rev=23ec3f74d0a05166e896feb7ad329e6c366a7f02#23ec3f74d0a05166e896feb7ad329e6c366a7f02"
+version = "0.18.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6f02e8d0327b42d3e2e4ab2119af397344eb9fc54a34bf0ddeaa1277af8681f1"
 dependencies = [
  "alsa",
  "block2 0.6.1",
